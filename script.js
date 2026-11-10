@@ -1,11 +1,10 @@
 const N = 63, X0 = 175, X1 = 1745, BASE = 543, MINH = 3, MAXH = 375;
-// Settings fitted against the original video (63 bars, measured frame by frame).
 const M = {
   f0: 20.9, f1: 13700, p: 0.572, tau: 0.471, wmax: 0.502, tilt: 4.40, cap: 15.94, agcmin: 0.1196, agcdec: 0.9995,
   floor: 0.0331, gamma: 1.529, att: 0.516, dec: 0.2844, sw: 0.2345, fp: 101.9, ltilt: -3.56
 };
-const DTV = 1001 / 30000;      // the fit's frame length (29.97 fps); all rates below scale with real frame time
-const LEAD = 0 * 10 * DTV;         // the original's bars lead its audio by 10 frames (0.334 s)
+const DTV = 1001 / 30000;
+const LEAD = 0 * 10 * DTV;
 let sens = 1, agc = M.agcmin, asrc = null, lastT = performance.now();
 const raw = new Float32Array(N), sm2 = new Float32Array(N);
 let lo = [], hi = [], fcs = [], gains = [], hz = 1, kmax = 0, sm, amp;
@@ -14,8 +13,14 @@ const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
 let coverImg = null, backgroundImg = null, flash = 0, bassAvg = 0.2;
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
-let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;   // bg gradient angle in degrees: 0 = up, 90 = right, 180 = down (default)
-// Near-black picks keep their color; text on them turns white and a thin grey edge keeps them visible.
+let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
+let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190;
+const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
+const MID = BASE - MAXH / 2;                           // mirrored layout: centre line, same footprint as the normal bars
+let mediaRecorder = null, recDest = null, recChunks = [], recNote = '';
+let autoColorCycle = false, colorCycleHue = 52;
+let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, beatNow = false;
+
 const UI_DARK = 90, EDGE = '#8c8c8c';
 const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const isDark = hex => Math.max(...rgbOf(hex)) < UI_DARK;
@@ -31,7 +36,7 @@ const pickerState = {
   bg: { h: 0, s: 0, v: 0, hex: '#000000' },
   bgEnd: { h: 258, s: 0.82, v: 0.24, hex: '#1a0b3d' }
 };
-const PREFIX = { main: 'color', end: 'end', bg: 'bg', bgEnd: 'bgEnd' };   // which element-id prefix each picker uses
+const PREFIX = { main: 'color', end: 'end', bg: 'bg', bgEnd: 'bgEnd' };
 let overlayColors = false;
 
 const rangeEls = Array.from(document.querySelectorAll('input[type=range]'));
@@ -73,13 +78,12 @@ function updateOverlayTheme() {
 $('overlayColors').onchange = updateOverlayTheme;
 const vals = new Float32Array(N);
 
-// stars
 const stars = Array.from({ length: 600 }, () => ({
   x: Math.random() * 1920, y: Math.random() * 1080,
-  r: 0.5 + Math.random() * 1.8, k: 0.1 + Math.random() * 0.4,   // k: speed along the travel direction
-  c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6 // c: slight sideways drift
+  r: 0.5 + Math.random() * 1.8, k: 0.1 + Math.random() * 0.4,
+  c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6
 }));
-const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, angle: 270 };   // angle: flight direction in degrees, 0 = up, 90 = right, 180 = down, 270 = left (default)
+const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, angle: 270 };
 
 function setup() {
   if (ctx) return;
@@ -111,11 +115,12 @@ function icon(p) { $('play').innerHTML = p ? STOP : PLAY; $('play').setAttribute
 icon(false);
 
 function stopAll() { for (const n of [src, asrc]) if (n) { n.onended = null; try { n.stop(); } catch (e) { } } }
-// Two sources: one you hear, one 0.334 s ahead that only feeds the analyser (the bars lead the sound).
 function startAt(off) {
+  setup();
   stopAll();
   src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
-  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); } };
+  if (recDest) src.connect(recDest);   // keep the recording's audio alive across seeks/resumes
+  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); stopRecording('Song ended. Video saved.'); } };
   src.start(0, off);
   asrc = null;
   if (off + LEAD < buf.duration) { asrc = ctx.createBufferSource(); asrc.buffer = buf; asrc.connect(analyser); asrc.start(0, off + LEAD); }
@@ -128,6 +133,7 @@ function startAt(off) {
 $('song').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   setup();
+  stopRecording();
   $('status').textContent = 'Decoding audio…';
   try {
     buf = await ctx.decodeAudioData(await f.arrayBuffer());
@@ -135,55 +141,33 @@ $('song').onchange = async e => {
     stopAll();
     playing = false; icon(false); vals.fill(0);
     offset = 0; $('play').disabled = false; $('seek').disabled = false;
-    $('status').textContent = 'Ready. Press Play.';
-  } catch (err) { $('status').textContent = 'Could not read that audio file. Try MP3, WAV or OGG.'; }
+    $('status').textContent = 'Ready. Press Play or Spacebar.';
+    if ($('presetRandomize').checked) randomizeSettings();
+  } catch (err) { notify('Could not read that audio file. Try MP3, WAV or OGG.', true); }
 };
 
-// Background image upload
 $('backgroundImage').onchange = e => {
-  const f = e.target.files[0];
-  if (!f) return;
+  const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
-    const im = new Image();
-    im.onload = () => {backgroundImg = im;};
-    im.src = r.result;
-  };
+  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; }; im.src = r.result; };
   r.readAsDataURL(f);
 };
+$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; };
 
-// Remove background image
-$('removeBackgroundImage').onclick = () => {
-  backgroundImg = null;
-  $('backgroundImage').value = '';
-};
-
-// Cover artwork upload
 $('cover').onchange = e => {
-  const f = e.target.files[0];
-  if (!f) return;
+  const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
-    const im = new Image();
-    im.onload = () => {coverImg = im;};
-    im.onerror = () => {
-      console.error('Could not load cover artwork.');
-    };
-    im.src = r.result;
-  };
+  r.onload = () => { const im = new Image(); im.onload = () => { coverImg = im; }; im.src = r.result; };
   r.readAsDataURL(f);
 };
-
-$('removeCoverImage').onclick = () => {
-  coverImg = null;
-  $('cover').value = '';
-};
+$('removeCoverImage').onclick = () => { coverImg = null; $('cover').value = ''; };
 
 $('play').onclick = async () => {
   if (!buf) return;
   await ctx.resume();
   if (playing) { offset = ctx.currentTime - startedAt; stopAll(); playing = false; icon(false); }
   else startAt(offset % buf.duration);
+  recSync();   // pausing the song pauses the recording too
 };
 
 const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor((s % 60) * 10) / 10; return m + ':' + r.toFixed(1).padStart(4, '0'); };
@@ -204,6 +188,7 @@ $('seek').onchange = () => {
   updateSliders();
 };
 $('sens').oninput = e => { sens = +e.target.value; updateSliders(); };
+
 function hsvToHex(h, s, v) {
   const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
   let [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] :
@@ -217,6 +202,7 @@ function hexToHsv(hex) {
   if (d) h = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
   return { h: (h + 360) % 360, s: max === 0 ? 0 : d / max, v: max };
 }
+
 function updatePicker(which) {
   const st = pickerState[which], hex = st.hex || hsvToHex(st.h, st.s, st.v);
   const prefix = PREFIX[which];
@@ -224,23 +210,27 @@ function updatePicker(which) {
   else if (which === 'end') gradientColor = hex;
   else if (which === 'bg') backgroundColor = hex;
   else backgroundEndColor = hex;
-  const wheel = $(prefix + 'Wheel');
   const knob = $(prefix + 'HueKnob');
   const square = $(prefix + 'SV');
   const svknob = $(prefix + 'SVKnob');
   const angle = (st.h - 90) * Math.PI / 180, radius = 69;
-  knob.style.left = (78 + Math.cos(angle) * radius) + 'px';
-  knob.style.top = (78 + Math.sin(angle) * radius) + 'px';
-  square.style.setProperty('--hue', `hsl(${st.h} 100% 50%)`);
-  svknob.style.left = (st.s * 100) + '%';
-  svknob.style.top = ((1 - st.v) * 100) + '%';
-  $(prefix + 'Swatch').style.background = hex;
+  if (knob) {
+    knob.style.left = (78 + Math.cos(angle) * radius) + 'px';
+    knob.style.top = (78 + Math.sin(angle) * radius) + 'px';
+  }
+  if (square) square.style.setProperty('--hue', `hsl(${st.h} 100% 50%)`);
+  if (svknob) {
+    svknob.style.left = (st.s * 100) + '%';
+    svknob.style.top = ((1 - st.v) * 100) + '%';
+  }
+  const swatch = $(prefix + 'Swatch');
+  if (swatch) swatch.style.background = hex;
   if (which === 'bg' || which === 'bgEnd') updateDial();
   syncFields(prefix, hex);
-
   updateOverlayTheme();
   updateSliders();
 }
+
 function bindPicker(which) {
   const prefix = PREFIX[which];
   const wheel = $(prefix + 'Wheel');
@@ -248,7 +238,7 @@ function bindPicker(which) {
   let mode = '';
   function updateFromPointer(el, e) {
     const rect = el.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
-    pickerState[which].hex = null; // dragging the wheel/square takes over from typed values
+    pickerState[which].hex = null;
     if (el === wheel) {
       const dx = x - rect.width / 2, dy = y - rect.height / 2;
       if (Math.hypot(dx, dy) > rect.width * 0.29) {
@@ -261,6 +251,7 @@ function bindPicker(which) {
     updatePicker(which);
   }
   for (const el of [wheel, square]) {
+    if (!el) continue;
     el.addEventListener('pointerdown', e => { e.stopPropagation(); mode = el.id; el.setPointerCapture(e.pointerId); updateFromPointer(el, e); });
     el.addEventListener('pointermove', e => { e.stopPropagation(); if (mode === el.id) updateFromPointer(el, e); });
     el.addEventListener('pointerup', () => mode = '');
@@ -273,16 +264,15 @@ $('gradient').onchange = e => {
   updateOverlayTheme();
   updateSliders();
 };
-// ---- background gradient ----
+
 function syncBgGradient() {
   useBgGradient = $('bgGradient').checked;
   $('bgEndWrap').hidden = !useBgGradient;
   $('bgDirRow').hidden = !useBgGradient;
 }
 $('bgGradient').onchange = syncBgGradient;
-// Direction dials (background gradient + star flight): drag the dial, type an angle, or use the arrow keys.
-// 0° = up, 90° = right, 180° = down, 270° = left.
-const SNAP_DEG = 4;   // magnetic zone around the 8 main directions
+
+const SNAP_DEG = 4;
 function makeDial({ dial, input, get, set, onUpdate }) {
   const update = () => {
     const a = get();
@@ -294,10 +284,10 @@ function makeDial({ dial, input, get, set, onUpdate }) {
   const apply = a => { set(((a % 360) + 360) % 360); update(); };
   const angleAt = e => {
     const r = dial.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    if (Math.hypot(dx, dy) < 6) return null;   // too close to the center to tell a direction
-    let a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;   // 0 = up, clockwise
-    if (e.shiftKey) a = Math.round(a / 15) * 15;                  // Shift: hard snap to 15° steps
-    else if (!e.altKey) {                                          // default: magnetic snap, Alt turns it off
+    if (Math.hypot(dx, dy) < 6) return null;
+    let a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    if (e.shiftKey) a = Math.round(a / 15) * 15;
+    else if (!e.altKey) {
       const n = Math.round(a / 45) * 45;
       if (Math.abs(a - n) <= SNAP_DEG) a = n;
     }
@@ -324,9 +314,10 @@ const bgDial = $('bgDial');
 const updateDial = makeDial({
   dial: bgDial, input: $('bgAngleIn'),
   get: () => bgAngle, set: a => { bgAngle = a; },
-  onUpdate: a => { bgDial.style.background = `linear-gradient(${a}deg, ${backgroundColor}, ${backgroundEndColor})`; }   // live preview
+  onUpdate: a => { bgDial.style.background = `linear-gradient(${a}deg, ${backgroundColor}, ${backgroundEndColor})`; }
 });
 syncBgGradient();
+
 function syncFields(prefix, hex) {
   const n = parseInt(hex.slice(1), 16), v = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   const set = (id, val) => { const el = $(id); if (el && document.activeElement !== el) el.value = val; };
@@ -339,7 +330,7 @@ function bindFields(which) {
   const apply = (r, gr, b) => {
     const hex = '#' + [r, gr, b].map(x => x.toString(16).padStart(2, '0')).join('');
     const hsv = hexToHsv(hex);
-    if (hsv.v === 0) { hsv.h = st.h; hsv.s = st.s; } else if (hsv.s === 0) hsv.h = st.h; // keep the wheel where it was for black/gray
+    if (hsv.v === 0) { hsv.h = st.h; hsv.s = st.s; } else if (hsv.s === 0) hsv.h = st.h;
     Object.assign(st, hsv, { hex });
     updatePicker(which);
   };
@@ -360,6 +351,52 @@ bindFields('main'); bindFields('end'); bindFields('bg'); bindFields('bgEnd');
 updatePicker('main'); updatePicker('end'); updatePicker('bg'); updatePicker('bgEnd');
 updateOverlayTheme();
 updateSliders();
+
+// --- Visualizer Mode Selectors & Controls ---
+function setMode(m) {
+  if (!['bars', 'circular', 'mirrored'].includes(m)) m = 'bars';
+  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular';
+}
+$('vizMode').onchange = e => setMode(e.target.value);
+$('circRadius').oninput = e => { circRadius = +e.target.value; updateSliders(); };
+$('circLength').oninput = e => { circLength = +e.target.value; updateSliders(); };
+$('circWidth').oninput = e => { circWidth = +e.target.value; updateSliders(); };
+$('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
+$('autoColorCycle').onchange = e => { autoColorCycle = e.target.checked; colorCycleHue = pickerState.main.h; };
+$('bassPulse').onchange = e => { bassPulse = e.target.checked; $('pulseAmt').disabled = !bassPulse; updateSliders(); };
+$('pulseAmt').oninput = e => { pulseAmt = +e.target.value; updateSliders(); };
+$('bgAudioReactive').onchange = e => { bgAudioReactive = e.target.checked; };
+
+// Stars + particles
+const partCfg = { on: true, count: 40, size: 3, speed: 1 };
+function syncStarUI() {
+  $('starOpts').classList.toggle('off', !starCfg.on);
+  $('starOpts').inert = !starCfg.on;
+  $('starLight').disabled = !starCfg.flash;
+  $('partOpts').classList.toggle('off', !partCfg.on);
+  $('partOpts').inert = !partCfg.on;
+}
+$('starsOn').onchange = e => { starCfg.on = e.target.checked; syncStarUI(); };
+$('starFlash').onchange = e => { starCfg.flash = e.target.checked; syncStarUI(); updateSliders(); };
+$('starDensity').oninput = e => { starCfg.count = +e.target.value; updateSliders(); };
+$('starSpeed').oninput = e => { starCfg.speed = +e.target.value; updateSliders(); };
+$('starBoost').oninput = e => { starCfg.boost = +e.target.value; updateSliders(); };
+$('starLight').oninput = e => { starCfg.light = +e.target.value; updateSliders(); };
+$('partOn').onchange = e => { partCfg.on = e.target.checked; syncStarUI(); };
+$('partCount').oninput = e => { partCfg.count = +e.target.value; updateSliders(); };
+$('partSize').oninput = e => { partCfg.size = +e.target.value; updateSliders(); };
+$('partSpeed').oninput = e => { partCfg.speed = +e.target.value; updateSliders(); };
+const updateStarDial = makeDial({ dial: $('starDial'), input: $('starAngleIn'), get: () => starCfg.angle, set: a => { starCfg.angle = a; } });
+syncStarUI(); updateSliders();
+
+// Messages: toast near the bottom of the screen (always visible) + the status line
+let toastT;
+function notify(msg, err = false) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.toggle('err', err); t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), err ? 6000 : 3500);
+  $('status').textContent = msg;
+}
 
 function analyse(dt) {
   if (!analyser || !playing) { flash *= 0.9; return 0; }
@@ -394,7 +431,7 @@ function analyse(dt) {
     vals[i] += (t - vals[i]) * (t > vals[i] ? ka : kd);
   }
   let b = 0; for (let i = 0; i < 15; i++) b += vals[i]; b /= 15;
-  if (b > bassAvg * 1.25 && b > 0.35) flash = 1;
+  if (b > bassAvg * 1.25 && b > 0.35) { if (flash < 0.4) beatNow = true; flash = 1; }   // rising edge = one beat
   bassAvg = bassAvg * 0.95 + b * 0.05;
   flash *= 0.9;
   return b;
@@ -402,11 +439,13 @@ function analyse(dt) {
 
 function drawStars(bass, dt) {
   if (!starCfg.on) return;
-  const rad = starCfg.angle * Math.PI / 180, dx = Math.sin(rad), dy = -Math.cos(rad), sp = (1 + bass * starCfg.boost) * starCfg.speed * dt * 60, f = starCfg.flash ? flash * starCfg.light : 0;
+  const rad = starCfg.angle * Math.PI / 180, dx = Math.sin(rad), dy = -Math.cos(rad);
+  const sp = (1 + bass * starCfg.boost) * starCfg.speed * dt * 60;
+  const f = starCfg.flash ? flash * starCfg.light : 0;
   g.fillStyle = '#fff';
   for (let i = 0; i < starCfg.count; i++) {
     const s = stars[i];
-    s.x += (dx * s.k - dy * s.c) * sp; s.y += (dy * s.k + dx * s.c) * sp;   // along the direction + slight perpendicular drift
+    s.x += (dx * s.k - dy * s.c) * sp; s.y += (dy * s.k + dx * s.c) * sp;
     if (s.x < -5) s.x = 1925; else if (s.x > 1925) s.x = -5;
     if (s.y < -5) s.y = 1085; else if (s.y > 1085) s.y = -5;
     g.globalAlpha = Math.min(1, s.a + f * 0.4);
@@ -415,8 +454,45 @@ function drawStars(bass, dt) {
   g.globalAlpha = 1;
 }
 
+const parts = [];
+const lerpHex = (a, b, t) => '#' + rgbOf(a).map((v, i) => Math.round(v + (rgbOf(b)[i] - v) * t).toString(16).padStart(2, '0')).join('');
+function spawnBurst() {
+  if (!partCfg.on) return;
+  const c2 = useGradient ? gradientColor : visualColor;
+  for (let i = 0; i < partCfg.count && parts.length < 1500; i++) {
+    const sp = (120 + Math.random() * 260) * partCfg.speed;
+    let x, y, a, t;
+    if (vizMode === 'circular') {               // explode outward from the ring
+      a = Math.random() * 6.283;
+      x = CIRC_CX + Math.cos(a) * (circRadius + Math.random() * 20); y = CIRC_CY + Math.sin(a) * (circRadius + Math.random() * 20);
+      t = Math.abs(((a / 6.283) * 2) % 2 - 1);
+    } else {                                    // shoot up from the bars (and down too in mirrored mode)
+      t = Math.random(); x = X0 + t * (X1 - X0);
+      const up = vizMode === 'mirrored' && Math.random() < 0.5 ? 1 : -1;
+      y = vizMode === 'mirrored' ? MID : BASE;
+      a = up * Math.PI / 2 + (Math.random() - 0.5) * 1.2;
+    }
+    parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 0.5 + Math.random() * 0.5, r: partCfg.size * (0.6 + Math.random() * 0.9), col: lerpHex(visualColor, c2, t) });
+  }
+}
+function drawParticles(dt) {
+  if (!partCfg.on) parts.length = 0;
+  if (!parts.length) return;
+  const rad = starCfg.angle * Math.PI / 180, wx = Math.sin(rad) * 90 * partCfg.speed, wy = -Math.cos(rad) * 90 * partCfg.speed;   // direction dial = wind
+  const drag = Math.pow(0.5, dt);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life -= p.decay * dt;
+    if (p.life <= 0) { parts.splice(i, 1); continue; }
+    p.vx *= drag; p.vy *= drag;
+    p.x += (p.vx + wx) * dt; p.y += (p.vy + wy) * dt;
+    g.globalAlpha = Math.min(1, p.life); g.fillStyle = p.col;
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, 6.283); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
 function fitText(txt, weight, size, maxW, ls = 0) {
-  // Text metrics measured from the original (AU5 reference): artist ~70px bold, title/extra ~48px book, baselines 666/716/762.
   do {
     g.font = `${weight} ${size}px Montserrat, sans-serif`;
     if ('letterSpacing' in g) g.letterSpacing = (ls * size) + 'px';
@@ -427,108 +503,301 @@ function fitText(txt, weight, size, maxW, ls = 0) {
 function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
-  // Background: image takes priority over solid color or gradient.
-  if (backgroundImg) {
-    // Cover the entire canvas while preserving the image aspect ratio.
-    const scale = Math.max(1920 / backgroundImg.width, 1080 / backgroundImg.height);
-    const w = backgroundImg.width * scale;
-    const h = backgroundImg.height * scale;
-    g.drawImage(backgroundImg, (1920 - w) / 2, (1080 - h) / 2, w, h);
+  if (beatNow) { beatNow = false; spawnBurst(); }
 
+  if (autoColorCycle && playing) {
+    colorCycleHue = (colorCycleHue + dt * 15) % 360;
+    pickerState.main.h = colorCycleHue; pickerState.main.hex = null;
+    updatePicker('main');
+  }
+
+  // Background rendering
+  if (backgroundImg) {
+    const scale = Math.max(1920 / backgroundImg.width, 1080 / backgroundImg.height);
+    const w = backgroundImg.width * scale, h = backgroundImg.height * scale;
+    g.drawImage(backgroundImg, (1920 - w) / 2, (1080 - h) / 2, w, h);
+    if (bgAudioReactive && bass > 0.1) {
+      g.fillStyle = `rgba(0,0,0,${bass * 0.3})`;
+      g.fillRect(0, 0, 1920, 1080);
+    }
   } else if (useBgGradient) {
     const W = 1920, H = 1080;
     const rad = bgAngle * Math.PI / 180;
     const ux = Math.sin(rad), uy = -Math.cos(rad);
     const half = (Math.abs(ux) * W + Math.abs(uy) * H) / 2;
-    const bgGrad = g.createLinearGradient(
-      W / 2 - ux * half,
-      H / 2 - uy * half,
-      W / 2 + ux * half,
-      H / 2 + uy * half
-    );
+    const bgGrad = g.createLinearGradient(W / 2 - ux * half, H / 2 - uy * half, W / 2 + ux * half, H / 2 + uy * half);
     bgGrad.addColorStop(0, backgroundColor);
     bgGrad.addColorStop(1, backgroundEndColor);
     g.fillStyle = bgGrad;
     g.fillRect(0, 0, W, H);
-
   } else {
     g.fillStyle = backgroundColor;
     g.fillRect(0, 0, 1920, 1080);
   }
-  // Stars always render above the background.
   drawStars(bass, dt);
 
-  // Resolve the selected color (or horizontal gradient) for both spectrum and default artwork.
   const c1 = visualColor, c2 = useGradient ? gradientColor : visualColor;
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   const [r1, g1, b1] = rgb(c1), [r2, g2, b2] = rgb(c2);
-  const FADE_FROM = 150, FADE_TO = 45; // the white outline fades in as a bar's brightest channel drops from FADE_FROM to FADE_TO
-
+  const FADE_FROM = 150, FADE_TO = 45;
 
   const barGradient = g.createLinearGradient(X0, 0, X1, 0);
   barGradient.addColorStop(0, c1); barGradient.addColorStop(1, c2);
-  const coverGradient = g.createLinearGradient(175, 593, 367, 785);
-  coverGradient.addColorStop(0, c1); coverGradient.addColorStop(1, c2);
 
-  // bars
-  const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
-  g.fillStyle = barGradient;
-  for (let i = 0; i < N; i++) {
-    const h = MINH + vals[i] * (MAXH - MINH);
-    const x = X0 + i * (w + gap), y = BASE - h;
-    g.fillRect(x, y, w, h);
-    const tx = (x + w / 2 - X0) / (X1 - X0);   // where this bar sits along the gradient
-    const br = Math.max(r1 + (r2 - r1) * tx, g1 + (g2 - g1) * tx, b1 + (b2 - b1) * tx);
-    let o = Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
-    o = o * o * (3 - 2 * o);                   // smoothstep: eases in instead of switching on
-    if (o > 0.01) {
-      const lw = 1 + o;                        // thin and faint at first, full 2px white once the bar is nearly black
-      g.globalAlpha = o; g.strokeStyle = '#fff'; g.lineWidth = lw;
-      g.strokeRect(x + lw / 2, y + lw / 2, Math.max(0, w - lw), Math.max(0, h - lw));
-      g.globalAlpha = 1;
+  // --- RENDER VISUALIZER MODES ---
+  if (vizMode === 'bars') {
+    const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
+    g.fillStyle = barGradient;
+    for (let i = 0; i < N; i++) {
+      const h = MINH + vals[i] * (MAXH - MINH);
+      const x = X0 + i * (w + gap), y = BASE - h;
+      g.fillRect(x, y, w, h);
+      const tx = (x + w / 2 - X0) / (X1 - X0);
+      const br = Math.max(r1 + (r2 - r1) * tx, g1 + (g2 - g1) * tx, b1 + (b2 - b1) * tx);
+      let o = Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
+      o = o * o * (3 - 2 * o);
+      if (o > 0.01) {
+        const lw = 1 + o;
+        g.globalAlpha = o; g.strokeStyle = '#fff'; g.lineWidth = lw;
+        g.strokeRect(x + lw / 2, y + lw / 2, Math.max(0, w - lw), Math.max(0, h - lw));
+        g.globalAlpha = 1;
+      }
+    }
+  } else if (vizMode === 'circular') {
+    // ring centred on the canvas; bass at the top, mirrored left/right so it looks symmetric
+    const R = circRadius, len = Math.max(MINH + 2, Math.min(circLength, CIRC_MAX - R));
+    g.strokeStyle = barGradient; g.lineWidth = circWidth; g.lineCap = 'round';
+    g.beginPath();
+    for (let i = 0; i < circCount; i++) {
+      const f = i / circCount, sym = f < 0.5 ? f * 2 : (1 - f) * 2;
+      const v = vals[Math.min(N - 1, Math.round(sym * (N - 1)))];
+      const a = -Math.PI / 2 + f * 2 * Math.PI, l = MINH + v * (len - MINH);
+      g.moveTo(CIRC_CX + Math.cos(a) * R, CIRC_CY + Math.sin(a) * R);
+      g.lineTo(CIRC_CX + Math.cos(a) * (R + l), CIRC_CY + Math.sin(a) * (R + l));
+    }
+    g.stroke(); g.lineCap = 'butt';
+  } else if (vizMode === 'mirrored') {
+    const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
+    g.fillStyle = barGradient;
+    for (let i = 0; i < N; i++) {
+      const h = (MINH + vals[i] * (MAXH - MINH)) / 2, x = X0 + i * (w + gap);
+      g.fillRect(x, MID - h, w, h);   // up
+      g.fillRect(x, MID, w, h);       // down (stays inside the original bar area, clear of cover and text)
     }
   }
 
-  // cover: user artwork stays untouched; otherwise the note tile follows the chosen palette.
-  const cx = 175, cy = 593, cs = 192;
+  drawParticles(dt);
+
+  // Cover artwork: bottom-left normally, centred inside the ring in circular mode
+  const circ = vizMode === 'circular';
+  const pulseScale = bassPulse ? (1 + bass * pulseAmt) : 1;
+  const cs = (circ ? Math.round(circRadius * 1.25) : 192) * pulseScale;
+  const ccx = circ ? CIRC_CX : 271, ccy = circ ? CIRC_CY : 689;
+  const cx = ccx - cs / 2, cy = ccy - cs / 2;
+  const coverGradient = g.createLinearGradient(cx, cy, cx + cs, cy + cs);
+  coverGradient.addColorStop(0, c1); coverGradient.addColorStop(1, c2);
+
   if (coverImg) {
-    const s = Math.min(coverImg.width, coverImg.height);
-    g.drawImage(coverImg, (coverImg.width - s) / 2, (coverImg.height - s) / 2, s, s, cx, cy, cs, cs);
+    const sq = Math.min(coverImg.width, coverImg.height);
+    g.drawImage(coverImg, (coverImg.width - sq) / 2, (coverImg.height - sq) / 2, sq, sq, cx, cy, cs, cs);
   } else {
     g.fillStyle = coverGradient; g.fillRect(cx, cy, cs, cs);
     g.fillStyle = '#fff';
-    g.font = '800 110px Montserrat'; g.textAlign = 'center';
-    g.fillText('♪', cx + cs / 2, cy + 135); g.textAlign = 'left';
+    g.font = `800 ${cs * 0.573}px Montserrat`; g.textAlign = 'center';
+    g.fillText('♪', cx + cs / 2, cy + cs * 0.703); g.textAlign = 'left';
   }
 
-  // text
+  // text: right of the cover normally, centred under the ring in circular mode
   g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
   const artist = $('artist').value.toUpperCase(), title = $('title').value.toUpperCase(), extra = $('extra').value.trim().toUpperCase();
-  const three = !!extra;   // with extra info the original uses a smaller 3-line layout
-  fitText(artist, 700, three ? 70 : 82, X1 - 403, three ? 0 : -0.01);
-  g.fillText(artist, 403, three ? 666 : 698);
-  fitText(title, 400, three ? 48 : 51, X1 - 403, three ? 0.015 : 0);
-  g.fillText(title, 403, three ? 716 : 753);
-  if (extra) { fitText(extra, 400, 48, X1 - 403, 0.015); g.fillText(extra, 403, 762); }
+  const three = !!extra;
+  if (circ) {
+    g.textAlign = 'center';
+    fitText(artist, 700, three ? 70 : 82, 1500, three ? 0 : -0.01);
+    g.fillText(artist, 960, three ? 925 : 945);
+    fitText(title, 400, three ? 48 : 51, 1500, three ? 0.015 : 0);
+    g.fillText(title, 960, three ? 975 : 1005);
+    if (extra) { fitText(extra, 400, 48, 1500, 0.015); g.fillText(extra, 960, 1025); }
+    g.textAlign = 'left';
+  } else {
+    fitText(artist, 700, three ? 70 : 82, X1 - 403, three ? 0 : -0.01);
+    g.fillText(artist, 403, three ? 666 : 698);
+    fitText(title, 400, three ? 48 : 51, X1 - 403, three ? 0.015 : 0);
+    g.fillText(title, 403, three ? 716 : 753);
+    if (extra) { fitText(extra, 400, 48, X1 - 403, 0.015); g.fillText(extra, 403, 762); }
+  }
   if ('letterSpacing' in g) g.letterSpacing = '0px';
   requestAnimationFrame(frame);
 }
-// ---- star settings ----
-function syncStarUI() {
-  $('starOpts').classList.toggle('off', !starCfg.on);
-  $('starOpts').inert = !starCfg.on;
-  $('starLight').disabled = !starCfg.flash;
-}
-$('starsOn').onchange = e => { starCfg.on = e.target.checked; syncStarUI(); };
-$('starFlash').onchange = e => { starCfg.flash = e.target.checked; syncStarUI(); updateSliders(); };
-$('starDensity').oninput = e => { starCfg.count = +e.target.value; updateSliders(); };
-$('starSpeed').oninput = e => { starCfg.speed = +e.target.value; updateSliders(); };
-$('starBoost').oninput = e => { starCfg.boost = +e.target.value; updateSliders(); };
-$('starLight').oninput = e => { starCfg.light = +e.target.value; updateSliders(); };
-makeDial({ dial: $('starDial'), input: $('starAngleIn'), get: () => starCfg.angle, set: a => { starCfg.angle = a; } });
-syncStarUI(); updateSliders();
 
-// ---- full screen + play bar toggle (buttons show on hover, like a video player) ----
+// --- Snapshot Screenshot Export ---
+$('snapshotBtn').onclick = () => {
+  const dataUrl = cv.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = ($('title').value || 'visualizer') + '-snapshot.png';
+  a.click();
+};
+
+// --- Video Export via MediaRecorder ---
+const REC_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+const recActive = () => mediaRecorder && mediaRecorder.state !== 'inactive';
+function recSync() {   // recording follows playback: paused song = paused recording
+  if (!recActive()) return;
+  try {
+    if (playing && mediaRecorder.state === 'paused') mediaRecorder.resume();
+    else if (!playing && mediaRecorder.state === 'recording') mediaRecorder.pause();
+  } catch (e) { }
+  $('recBtn').classList.toggle('paused', mediaRecorder.state === 'paused');
+}
+function stopRecording(msg) {
+  if (!recActive()) return;
+  recNote = msg || 'Recording stopped. Video saved.';
+  try { mediaRecorder.stop(); } catch (e) { }
+}
+function recCleanup() {
+  $('recBtn').classList.remove('rec', 'paused');
+  try { if (src && recDest) src.disconnect(recDest); } catch (e) { }
+  recDest = null;
+}
+$('recBtn').onclick = () => {
+  if (recActive()) { stopRecording(); return; }
+  if (!buf) { notify('Load a song first, then press play and start recording.', true); return; }
+  if (!playing) { notify('Press play first, then start recording.', true); return; }
+  if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { notify('Video export is not supported in this browser.', true); return; }
+  try {
+    const stream = cv.captureStream(60);
+    recDest = ctx.createMediaStreamDestination();
+    src.connect(recDest);
+    recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported(t));
+    const ext = type && type.includes('mp4') ? 'mp4' : 'webm';
+    recChunks = [];
+    mediaRecorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    mediaRecorder.onerror = e => { recCleanup(); notify('Recording failed: ' + ((e.error && e.error.message) || 'unknown error'), true); };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+      recCleanup();
+      stream.getTracks().forEach(t => t.stop());
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (($('title').value || 'visualizer').replace(/[\\/:*?"<>|]/g, '_')) + '.' + ext;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      notify(recNote);
+    };
+    mediaRecorder.start();
+    $('recBtn').classList.add('rec');
+    notify('Recording… pausing the song pauses the recording. Click the camera button again to stop and save.');
+  } catch (err) { recCleanup(); notify('Video recording error: ' + err.message, true); }
+};
+
+// --- Settings: one set of functions shared by presets, randomize, export and import ---
+function setCtl(id, v) {   // set a control and fire its normal handler
+  const el = $(id);
+  if (!el || v === undefined || v === null) return;
+  if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  el.dispatchEvent(new Event(el.type === 'range' ? 'input' : 'change', { bubbles: true }));
+}
+function setPickerHex(which, hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
+  pickerState[which] = Object.assign(hexToHsv(hex), { hex: hex.toLowerCase() });
+  updatePicker(which);
+}
+const wrapDeg = a => ((a % 360) + 360) % 360;
+function getSettings(withText) {
+  return {
+    ...(withText ? { artist: $('artist').value, title: $('title').value, extra: $('extra').value } : {}),
+    main: visualColor, end: gradientColor, bg: backgroundColor, bgEnd: backgroundEndColor,
+    useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
+    mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount },
+    bassPulse, pulseAmt, bgReactive: bgAudioReactive, sens,
+    stars: { ...starCfg }, particles: { ...partCfg }
+  };
+}
+function applySettings(p) {
+  ['artist', 'title', 'extra'].forEach(k => { if (typeof p[k] === 'string') $(k).value = p[k]; });
+  setPickerHex('main', p.main); setPickerHex('end', p.end); setPickerHex('bg', p.bg); setPickerHex('bgEnd', p.bgEnd);
+  setCtl('gradient', p.useGrad); setCtl('bgGradient', p.useBgGrad);
+  setCtl('overlayColors', p.overlay); setCtl('autoColorCycle', p.autoCycle);
+  if (typeof p.bgAngle === 'number') { bgAngle = wrapDeg(p.bgAngle); updateDial(); }
+  if (p.mode) setMode(p.mode);
+  const c = p.circ || {};
+  setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count);
+  setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('sens', p.sens);
+  const st = p.stars;
+  if (st) {
+    setCtl('starsOn', st.on); setCtl('starDensity', st.count); setCtl('starSpeed', st.speed);
+    setCtl('starBoost', st.boost); setCtl('starFlash', st.flash); setCtl('starLight', st.light);
+    if (typeof st.angle === 'number') { starCfg.angle = wrapDeg(st.angle); updateStarDial(); }
+  }
+  const q = p.particles;
+  if (q) { setCtl('partOn', q.on); setCtl('partCount', q.count); setCtl('partSize', q.size); setCtl('partSpeed', q.speed); }
+  updateOverlayTheme(); updateSliders();
+}
+
+const PRESETS = {
+  default: { main: '#f2d90a', end: '#ff6a00', bg: '#000000', bgEnd: '#1a0b3d', useGrad: false, useBgGrad: true, mode: 'bars' },
+  cyberpunk: { main: '#00f0ff', end: '#ff0055', bg: '#05020a', bgEnd: '#150526', useGrad: true, useBgGrad: true, mode: 'circular' },
+  sunset: { main: '#ff7700', end: '#ff00aa', bg: '#100514', bgEnd: '#320d3e', useGrad: true, useBgGrad: true, mode: 'mirrored' },
+  monochrome: { main: '#ffffff', end: '#888888', bg: '#000000', bgEnd: '#111111', useGrad: true, useBgGrad: true, mode: 'bars' }
+};
+$('presetSelect').onchange = e => { const p = PRESETS[e.target.value]; if (p) applySettings(p); };
+
+$('savePresetBtn').onclick = () => {
+  const name = (prompt('Enter preset name:') || '').trim();
+  if (!name) return;
+  const key = name.toLowerCase();
+  const isNew = !PRESETS[key];
+  PRESETS[key] = getSettings(false);
+  if (isNew) { const opt = document.createElement('option'); opt.value = key; opt.textContent = name; $('presetSelect').appendChild(opt); }
+  $('presetSelect').value = key;
+  notify(`Preset "${name}" saved.`);
+};
+
+$('exportJsonBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: 'nebula-visualizer', version: 2, ...getSettings(true) }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (($('title').value || 'visualizer-project').replace(/[\\/:*?"<>|]/g, '_')) + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  notify('Project settings exported (audio and images are not included).');
+};
+
+$('importJsonFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      let p = JSON.parse(ev.target.result);
+      if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('not a project file');
+      if (p.visualColor) p = {   // files exported by the first version
+        artist: p.artist, title: p.title, extra: p.extra, main: p.visualColor, end: p.gradientColor, bg: p.backgroundColor, bgEnd: p.backgroundEndColor,
+        useGrad: p.useGradient, useBgGrad: p.useBgGradient, bgAngle: p.bgAngle, mode: p.vizMode, sens: p.sens, stars: p.starCfg,
+        circ: { radius: p.circRadius, count: p.circCount }
+      };
+      applySettings(p);
+      notify('Project settings imported.');
+    } catch (err) { notify('Could not import that file: ' + err.message, true); }
+    e.target.value = '';   // allow importing the same file again
+  };
+  r.readAsText(f);
+};
+
+function randomizeSettings() {
+  const rnd = (a, b) => a + Math.random() * (b - a), h = rnd(0, 360);
+  applySettings({
+    main: hsvToHex(h, rnd(0.65, 1), rnd(0.85, 1)), end: hsvToHex((h + rnd(40, 160)) % 360, rnd(0.65, 1), rnd(0.85, 1)),
+    bg: hsvToHex(h, rnd(0.3, 0.8), rnd(0.03, 0.1)), bgEnd: hsvToHex((h + rnd(20, 80)) % 360, rnd(0.4, 0.9), rnd(0.12, 0.28)),
+    useGrad: true, useBgGrad: true, bgAngle: Math.round(rnd(0, 360)),
+    mode: ['bars', 'circular', 'mirrored'][Math.floor(Math.random() * 3)]
+  });
+}
+$('randomizeBtn').onclick = () => { randomizeSettings(); notify('Random look applied.'); };
+
+// --- Keyboard Shortcuts & Fullscreen ---
 const stage = $('stage'), fsBtn = $('fsBtn'), barBtn = $('barToggle');
 const ICON_ENTER = '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
 const ICON_EXIT = '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>';
@@ -536,6 +805,7 @@ const ICON_BAR = '<svg viewBox="0 0 24 24"><path d="M4 19h16M6 5v8l7-4z"/><circl
 const ICON_BAR_OFF = '<svg viewBox="0 0 24 24"><path d="M4 19h16M6 5v8l7-4z"/><circle cx="10" cy="19" r="1.6"/><path d="M3 3l18 18"/></svg>';
 const nativeFS = () => document.fullscreenElement || document.webkitFullscreenElement;
 let pseudoFS = false, showBar = true, idleT;
+
 function syncFS() {
   const on = nativeFS() === stage || pseudoFS;
   stage.classList.toggle('fs', on);
@@ -549,7 +819,7 @@ function toggleFS() {
   if (nativeFS()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
   if (pseudoFS) { pseudoFS = false; syncFS(); return; }
   const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
-  if (!req) { pseudoFS = true; syncFS(); return; }   // e.g. iPhone Safari: fill the window instead
+  if (!req) { pseudoFS = true; syncFS(); return; }
   const p = req.call(stage);
   if (p && p.catch) p.catch(() => { pseudoFS = true; syncFS(); });
 }
@@ -561,7 +831,7 @@ function syncBar() {
   barBtn.setAttribute('aria-label', t); barBtn.title = t;
 }
 function wake() {
-  if (!stage.classList.contains('fs')) return;   // outside full screen the buttons simply follow hover
+  if (!stage.classList.contains('fs')) return;
   stage.classList.add('active'); stage.classList.remove('idle');
   clearTimeout(idleT);
   idleT = setTimeout(() => { stage.classList.remove('active'); if (stage.classList.contains('fs')) stage.classList.add('idle'); }, 1000);
@@ -571,11 +841,25 @@ barBtn.onclick = e => { showBar = !showBar; syncBar(); if (e.detail) barBtn.blur
 ['pointermove', 'pointerdown', 'touchstart'].forEach(ev => stage.addEventListener(ev, wake, { passive: true }));
 stage.addEventListener('pointerleave', e => {
   if (e.pointerType !== 'mouse') return;
-  clearTimeout(idleT); stage.classList.remove('active', 'idle');   // leaving with the mouse hides them at once
+  clearTimeout(idleT); stage.classList.remove('active', 'idle');
 });
 document.addEventListener('fullscreenchange', syncFS);
 document.addEventListener('webkitfullscreenchange', syncFS);
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && pseudoFS) { pseudoFS = false; syncFS(); } });
+
+// Keyboard shortcuts (Space to play/pause, F for fullscreen)
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === ' ') {
+    e.preventDefault();
+    $('play').click();
+  } else if (e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    toggleFS();
+  } else if (e.key === 'Escape' && pseudoFS) {
+    pseudoFS = false; syncFS();
+  }
+});
+
 syncFS(); syncBar();
 
 document.fonts.load('700 40px Montserrat').then(() => document.fonts.load('800 40px Montserrat')).then(() => document.fonts.load('400 40px Montserrat')).finally(frame);
