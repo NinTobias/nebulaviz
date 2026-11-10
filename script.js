@@ -12,7 +12,7 @@ let lo = [], hi = [], fcs = [], gains = [], hz = 1, kmax = 0, sm, amp;
 const cv = document.getElementById('c'), g = cv.getContext('2d');
 const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
-let coverImg = null, flash = 0, bassAvg = 0.2;
+let coverImg = null, backgroundImg = null, flash = 0, bassAvg = 0.2;
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
 let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;   // bg gradient angle in degrees: 0 = up, 90 = right, 180 = down (default)
 // Near-black picks keep their color; text on them turns white and a thin grey edge keeps them visible.
@@ -139,11 +139,44 @@ $('song').onchange = async e => {
   } catch (err) { $('status').textContent = 'Could not read that audio file. Try MP3, WAV or OGG.'; }
 };
 
-$('cover').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
+// Background image upload
+$('backgroundImage').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
   const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => coverImg = im; im.src = r.result; };
+  r.onload = () => {
+    const im = new Image();
+    im.onload = () => {backgroundImg = im;};
+    im.src = r.result;
+  };
   r.readAsDataURL(f);
+};
+
+// Remove background image
+$('removeBackgroundImage').onclick = () => {
+  backgroundImg = null;
+  $('backgroundImage').value = '';
+};
+
+// Cover artwork upload
+$('cover').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const im = new Image();
+    im.onload = () => {coverImg = im;};
+    im.onerror = () => {
+      console.error('Could not load cover artwork.');
+    };
+    im.src = r.result;
+  };
+  r.readAsDataURL(f);
+};
+
+$('removeCoverImage').onclick = () => {
+  coverImg = null;
+  $('cover').value = '';
 };
 
 $('play').onclick = async () => {
@@ -394,15 +427,35 @@ function fitText(txt, weight, size, maxW, ls = 0) {
 function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
-  if (useBgGradient) {
-    // Gradient line passes through the canvas center; its length makes the corners hit the exact start/end colors.
-    const W = 1920, H = 1080, rad = bgAngle * Math.PI / 180, ux = Math.sin(rad), uy = -Math.cos(rad);
+  // Background: image takes priority over solid color or gradient.
+  if (backgroundImg) {
+    // Cover the entire canvas while preserving the image aspect ratio.
+    const scale = Math.max(1920 / backgroundImg.width, 1080 / backgroundImg.height);
+    const w = backgroundImg.width * scale;
+    const h = backgroundImg.height * scale;
+    g.drawImage(backgroundImg, (1920 - w) / 2, (1080 - h) / 2, w, h);
+
+  } else if (useBgGradient) {
+    const W = 1920, H = 1080;
+    const rad = bgAngle * Math.PI / 180;
+    const ux = Math.sin(rad), uy = -Math.cos(rad);
     const half = (Math.abs(ux) * W + Math.abs(uy) * H) / 2;
-    const bgGrad = g.createLinearGradient(W / 2 - ux * half, H / 2 - uy * half, W / 2 + ux * half, H / 2 + uy * half);
-    bgGrad.addColorStop(0, backgroundColor); bgGrad.addColorStop(1, backgroundEndColor);
+    const bgGrad = g.createLinearGradient(
+      W / 2 - ux * half,
+      H / 2 - uy * half,
+      W / 2 + ux * half,
+      H / 2 + uy * half
+    );
+    bgGrad.addColorStop(0, backgroundColor);
+    bgGrad.addColorStop(1, backgroundEndColor);
     g.fillStyle = bgGrad;
-  } else g.fillStyle = backgroundColor;
-  g.fillRect(0, 0, 1920, 1080);
+    g.fillRect(0, 0, W, H);
+
+  } else {
+    g.fillStyle = backgroundColor;
+    g.fillRect(0, 0, 1920, 1080);
+  }
+  // Stars always render above the background.
   drawStars(bass, dt);
 
   // Resolve the selected color (or horizontal gradient) for both spectrum and default artwork.
