@@ -28,9 +28,12 @@
       <label>Artist<input type="text" id="artist" value="Artist" placeholder="Artist"></label>
       <label>Song title<input type="text" id="title" value="Song Title" placeholder="Song title"></label>
       <label>Extra info<input type="text" id="extra" value="" placeholder="(Feat. other), (VIP Mix), ..."></label>
-      <label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
-      <label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
-    </div>
+	</div>
+	<div class="choose-bar">
+		<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
+		<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
+		<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
+	</div>
     <div class="groups">
       <details class="group" open>
         <summary>Colors</summary>
@@ -78,6 +81,15 @@
         <div class="group-body">
           <div class="settings-row">
             <label class="toggle"><input type="checkbox" id="bgGradient"> Gradient</label>
+          </div>
+          <div class="choose-bar">
+            <label class="btn">
+              Choose background image
+              <input type="file" id="backgroundImage" accept="image/*">
+            </label>
+            <button class="btn" id="removeBackgroundImage" type="button">
+              Remove image
+            </button>
           </div>
           <div class="color-tools">
             <div class="palette-control">
