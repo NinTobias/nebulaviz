@@ -31,7 +31,12 @@ Your audio and images are processed entirely in your browser. Nothing is uploade
 - Vanilla JavaScript (no frameworks or build step)
 - Web Audio API (`AnalyserNode` for the FFT)
 - Canvas 2D for rendering
-- Single-file HTML, easy to host anywhere
+
+## Project structure
+
+- `index.html`: page markup
+- `style.css`: layout and styling
+- `script.js`: audio analysis, rendering and UI logic
 
 ## Notes
 
