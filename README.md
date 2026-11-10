@@ -8,21 +8,22 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum style. Lo
 
 ## Features
 
-- 63-bar frequency spectrum driven by an FFT of the playing audio
-- Main color and optional gradient, each with a hue wheel and RGB/hex inputs
-- Custom background color
-- Star field that speeds up and lights up on bass hits, with controls for density, speed, boost, intensity and direction
-- Adjustable sensitivity
-- Custom cover art, artist, title and extra info (feat./remix) text
-- Full screen mode and a hideable play bar
+- 63-band FFT spectrum that responds in real time to the current track
+- Adjustable main color with optional gradient and color overlay styling
+- Full background customization with solid color, gradient, gradient angle control, and optional background image
+- Animated star field with controls for density, speed, boost, intensity, direction, and beat-triggered flash
+- Sensitivity control for tuning the visual response to the music
+- Custom cover art, artist name, track title, and extra info such as feat./remix text
+- Full-screen view and hideable playback bar for a cleaner presentation
 - Responsive layout that works on desktop and mobile
 
 ## How to use
 
 1. Open the live demo (or `index.html` locally).
 2. Click **Choose song** and pick an audio file (MP3, WAV or OGG).
-3. Optionally add a cover image and edit the artist and title.
-4. Press play and tweak the colors and star settings.
+3. Optionally add a cover image and edit the artist, title, or extra info fields.
+4. Press play and use the editor panels to fine-tune the color, background, and star settings.
+5. Toggle full-screen mode or hide the play bar when you want a more cinematic look.
 
 Your audio and images are processed entirely in your browser. Nothing is uploaded anywhere.
 
