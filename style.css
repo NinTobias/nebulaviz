@@ -409,12 +409,14 @@ input[type=range]:disabled {
 }
 
 #seek,
+#vol,
 .sens input {
   height: 6px;
   border-radius: 99px;
 }
 
 #seek::-webkit-slider-runnable-track,
+#vol::-webkit-slider-runnable-track,
 .sens input::-webkit-slider-runnable-track {
   background: transparent;
   height: 6px;
@@ -422,6 +424,7 @@ input[type=range]:disabled {
 }
 
 #seek::-moz-range-track,
+#vol::-moz-range-track,
 .sens input::-moz-range-track {
   background: transparent;
   height: 6px;
@@ -431,6 +434,7 @@ input[type=range]:disabled {
 
 /* Range Thumbs */
 #seek::-webkit-slider-thumb,
+#vol::-webkit-slider-thumb,
 .sens input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -443,6 +447,7 @@ input[type=range]:disabled {
 }
 
 #seek::-moz-range-thumb,
+#vol::-moz-range-thumb,
 .sens input::-moz-range-thumb {
   width: 14px;
   height: 14px;
@@ -854,4 +859,32 @@ select option {
   50% {
     opacity: .55
   }
+}
+
+
+/* --- volume --- */
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none
+}
+
+#vol {
+  width: 84px
+}
+
+/* sliders that sit in a row next to a toggle */
+.settings-row .sens {
+  width: min(100%, 260px)
+}
+
+/* dim a toggle whose control is switched off */
+.toggle:has(:disabled) {
+  opacity: .4
+}
+
+/* main/gradient pickers are unused while rainbow mode is on */
+#colorTools.off {
+  opacity: .4
 }
