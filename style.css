@@ -135,25 +135,80 @@ input:focus-visible {
   min-width: 130px
 }
 
-/* Slider rows: fixed label column so every slider starts and ends at the same x */
-.slider-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 12px
+/* Slider rows: label | slider | value. Every slider in a settings group shares the same three columns
+   (see .group-body), so the label column is only as wide as the longest label and everything lines up. */
+.slider-col,
+.sens {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
 }
 
-/* extra air above a toggle that sits inside a slider column (12px gap + 14px = 26px, same as the Direction block) */
-.slider-col>.toggle {
+.slider-col {
+  row-gap: 12px;
+  margin-top: 12px;
+  align-items: center
+}
+
+.slider-col>* {
+  grid-column: 1 / -1
+}
+
+.slider-col>.settings-row {
+  margin-top: 0
+}
+
+/* extra air above a toggle that follows other rows in a slider column (12px gap + 14px = 26px, same as the Direction block) */
+.slider-col>.toggle:not(:first-child) {
   margin-top: 14px
 }
 
 .sens {
-  display: grid;
-  grid-template-columns: var(--lbl-w) minmax(0, 1fr);
+  column-gap: normal;   /* normal = inherit the group's column gap */
+  row-gap: 0;
+  align-items: center
+}
+
+/* numeric readout at the end of a slider row (created by script.js) */
+.val {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: min(100%, 360px)
+  gap: 5px
+}
+
+.num-in,
+.angle-in {
+  width: 58px;
+  height: auto;
+  border-radius: 0;
+  background: var(--panel);
+  border: 1px solid #2f2d20;
+  color: var(--ink);
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield
+}
+
+.num-in::-webkit-inner-spin-button,
+.num-in::-webkit-outer-spin-button,
+.angle-in::-webkit-inner-spin-button,
+.angle-in::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0
+}
+
+.num-in:disabled {
+  cursor: default
+}
+
+.unit {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap
 }
 
 .round {
@@ -403,14 +458,14 @@ input[type=range]:disabled {
   min-width: 200px;
 }
 
-.sens input {
+.sens input[type=range] {
   width: 100%;
   min-width: 0;
 }
 
 #seek,
 #vol,
-.sens input {
+.sens input[type=range] {
   height: 6px;
   border-radius: 99px;
 }
@@ -614,20 +669,42 @@ input[type=range]:disabled::-moz-range-thumb {
 }
 
 .group-body {
+  display: grid;
+  grid-template-columns: max-content minmax(60px, 300px) max-content 1fr;   /* label | slider | value | (rest) */
+  column-gap: 10px;
+  align-content: start;
   padding: 2px clamp(10px, calc(6.667vw - 14px), 14px) 16px
 }
 
-.group-body>.settings-row:first-child {
+.group-body>* {
+  grid-column: 1 / -1;
+  min-width: 0
+}
+
+.group-body>:first-child {
   margin-top: 4px
+}
+
+.subhead {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid #2a281c;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dim)
+}
+
+.hint {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dim)
 }
 
 .sens:has(input:disabled) {
   opacity: .4
-}
-
-#starOpts,
-#partOpts {
-  transition: opacity .15s
 }
 
 #starOpts.off,
@@ -765,26 +842,6 @@ input[type=range]:disabled::-moz-range-thumb {
   gap: 4px;
 }
 
-.angle-in {
-  width: 64px;
-  background: var(--panel);
-  border: 1px solid #2f2d20;
-  color: var(--ink);
-  padding: 5px 6px;
-  font: inherit;
-  font-size: 12px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  appearance: textfield;
-  -moz-appearance: textfield;
-}
-
-.angle-in::-webkit-inner-spin-button,
-.angle-in::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
 /* --- selects styled like buttons (not bold) --- */
 select.btn {
   font-size: 13px;
@@ -874,17 +931,37 @@ select option {
   width: 84px
 }
 
-/* sliders that sit in a row next to a toggle */
-.settings-row .sens {
-  width: min(100%, 260px)
-}
-
 /* dim a toggle whose control is switched off */
 .toggle:has(:disabled) {
   opacity: .4
 }
 
-/* main/gradient pickers are unused while rainbow mode is on */
-#colorTools.off {
+/* main/gradient pickers are unused while rainbow mode is on; the background colors are unused while an image is loaded */
+#colorTools.off,
+#bgColorOpts.off {
   opacity: .4
+}
+
+#starOpts,
+#partOpts {
+  transition: opacity .15s
+}
+
+/* fallback for browsers without CSS subgrid (before 2023): fixed label column per row */
+@supports not (grid-template-columns: subgrid) {
+  .group-body {
+    display: block
+  }
+
+  .slider-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+  }
+
+  .sens {
+    grid-template-columns: var(--lbl-w) minmax(0, 1fr) auto;
+    column-gap: 8px;
+    width: min(100%, 460px)
+  }
 }
