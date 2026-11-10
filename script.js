@@ -12,11 +12,11 @@ const cv = document.getElementById('c'), g = cv.getContext('2d');
 const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
 let coverImg = null, backgroundImg = null, flash = 0;
-let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beatK1 = 2;   // beat detector state
+let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beatK1 = 2, beatStrength = 1, lastBurst = -9;   // beat detector state
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
 let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
-let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190, mirCount = 63;
-const MODES = ['bars', 'circular', 'mirrored', 'wave', 'dots', 'ridge'];
+let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190, mirCount = 63, dotsCount = 63, dotsPeak = true;
+const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
 const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
 const MID = BASE - MAXH / 2;                           // mirrored layout: centre line, same footprint as the normal bars
 let cycleSpeed = 15, rainbow = false, rbMove = true, rbDir = 1, rbSpeed = 60, rbOffset = 0, circSym = true;
@@ -377,7 +377,7 @@ updateSliders();
 // --- Visualizer Mode Selectors & Controls ---
 function setMode(m) {
   if (!MODES.includes(m)) m = 'bars';
-  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored';
+  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored'; $('dotsOpts').hidden = m !== 'dots';
 }
 $('vizMode').onchange = e => setMode(e.target.value);
 $('circRadius').oninput = e => { circRadius = +e.target.value; updateSliders(); };
@@ -385,6 +385,8 @@ $('circLength').oninput = e => { circLength = +e.target.value; updateSliders(); 
 $('circWidth').oninput = e => { circWidth = +e.target.value; updateSliders(); };
 $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
+$('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
+$('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
 $('autoColorCycle').onchange = e => { autoColorCycle = e.target.checked; syncRainbowUI(); };
 $('cycleSpeed').oninput = e => { cycleSpeed = +e.target.value; updateSliders(); };
 $('rainbow').onchange = e => { rainbow = e.target.checked; syncRainbowUI(); };
@@ -421,7 +423,7 @@ $('bgAudioReactive').onchange = e => { bgAudioReactive = e.target.checked; $('bg
 $('bgPulseAmt').oninput = e => { bgPulseAmt = +e.target.value; updateSliders(); };
 
 // Stars + particles
-const partCfg = { on: true, count: 40, size: 3, speed: 1 };
+const partCfg = { on: true, count: 40, size: 3, speed: 1, sens: 1 };
 function syncStarUI() {
   $('starOpts').classList.toggle('off', !starCfg.on);
   $('starOpts').inert = !starCfg.on;
@@ -439,6 +441,7 @@ $('partOn').onchange = e => { partCfg.on = e.target.checked; syncStarUI(); };
 $('partCount').oninput = e => { partCfg.count = +e.target.value; updateSliders(); };
 $('partSize').oninput = e => { partCfg.size = +e.target.value; updateSliders(); };
 $('partSpeed').oninput = e => { partCfg.speed = +e.target.value; updateSliders(); };
+$('partSens').oninput = e => { partCfg.sens = +e.target.value; updateSliders(); };
 const updateStarDial = makeDial({ dial: $('starDial'), input: $('starAngleIn'), get: () => starCfg.angle, set: a => { starCfg.angle = a; } });
 syncStarUI(); updateSliders();
 
@@ -450,6 +453,8 @@ const SLIDER_INFO = {
   circLength:  { unit: 'px',     tip: 'Longest a bar can grow outward from the ring, in pixels (limited by the frame edge).' },
   circWidth:   { unit: 'px',     tip: 'Thickness of each bar, in pixels.' },
   circCount:   { unit: 'bars',   tip: 'Number of bars around the ring.' },
+  dotsCount:   { unit: 'bars',   tip: 'Number of columns in the LED matrix.' },
+  partSens:    { scale: 100, unit: '%', tip: 'How easily a bass hit releases particles. Lower it for very bassy songs: only the strongest hits (and fewer of them) will burst. Star flashes are not affected.' },
   mirCount:    { unit: 'bars',   tip: 'Number of bars in the mirrored spectrum. 63 matches the original; more bars look smoother, fewer look chunkier.' },
   cycleSpeed:  { unit: '°/s',    tip: 'Hue shift per second. 15°/s is one full trip around the color wheel every 24 seconds; 360°/s is one per second.' },
   rbSpeed:     { unit: '°/s',    tip: 'How fast the rainbow slides, in degrees of hue per second. 360°/s = one full rainbow cycle per second.' },
@@ -543,7 +548,7 @@ function analyse(dt) {
   beatClock += dt;
   beatPeak = Math.max(E, beatPeak * Math.pow(0.999, dt * 60));                 // slow-decay loudness reference
   if (!beatAvg) beatAvg = E;
-  if (E > beatAvg * 1.25 && E > beatPeak * 0.15 && beatClock - lastBeat > 0.3) { beatNow = true; flash = 1; lastBeat = beatClock; }
+  if (E > beatAvg * 1.25 && E > beatPeak * 0.15 && beatClock - lastBeat > 0.3) { beatNow = true; flash = 1; lastBeat = beatClock; beatStrength = E / Math.max(beatAvg, 1e-9); }
   beatAvg += (E - beatAvg) * (1 - Math.exp(-dt / 0.4));
   flash *= Math.pow(0.9, dt * 60);
   return b;
@@ -567,7 +572,17 @@ function drawStars(bass, dt) {
 }
 
 const parts = [];
-const peaks = new Float32Array(N), ridgeHist = [], RIDGE_ROWS = 14; let ridgeAcc = 0;   // LED-matrix peak dots, ridgeline history
+const peaks = new Float32Array(160), ridgeHist = [], RIDGE_ROWS = 14; let ridgeAcc = 0;   // LED-matrix peak dots, ridgeline history
+function ridgePaths(row, amp) {   // one ridge row as paths at y = 0 (moved into place with translate), so old rows are built only once
+  const p = new Path2D(); p.moveTo(X0, -row[0] * amp);
+  for (let i = 1; i < N - 1; i++) {
+    const x0 = X0 + (X1 - X0) * i / (N - 1), x1 = X0 + (X1 - X0) * (i + 1) / (N - 1);
+    p.quadraticCurveTo(x0, -row[i] * amp, (x0 + x1) / 2, -(row[i] + row[i + 1]) / 2 * amp);
+  }
+  p.lineTo(X1, -row[N - 1] * amp);
+  const area = new Path2D(p); area.lineTo(X1, 2); area.lineTo(X0, 2); area.closePath();
+  return { curve: p, area };
+}
 const lerpHex = (a, b, t) => '#' + rgbOf(a).map((v, i) => Math.round(v + (rgbOf(b)[i] - v) * t).toString(16).padStart(2, '0')).join('');
 function spawnBurst() {
   if (!partCfg.on) return;
@@ -616,7 +631,11 @@ function fitText(txt, weight, size, maxW, ls = 0) {
 function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
-  if (beatNow) { beatNow = false; spawnBurst(); }
+  if (beatNow) {   // particle sensitivity: lower = only stronger hits, spaced further apart
+    beatNow = false;
+    const k = Math.max(0, 1 - partCfg.sens);
+    if (beatStrength >= 1.25 + k * 0.12 && beatClock - lastBurst >= 0.3 + k * 0.4 + k * k * 1.5) { lastBurst = beatClock; spawnBurst(); }
+  }
   // Stars and particles stand still while a loaded song is paused or stopped (so a recording resumes exactly where it left off).
   // With no song loaded yet they keep drifting, so the star settings can still be previewed.
   const mdt = (playing || !buf) ? dt : 0;
@@ -731,42 +750,67 @@ function frame() {
     g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30;
     g.stroke(line);
     g.restore();
+  } else if (vizMode === 'wavemir') {
+    // Mirrored Smooth Wave: the same flowing curve above and below a centre line
+    const K = 126, top = [], bot = [];
+    for (let j = 0; j <= K; j++) {
+      const f = j / K * (N - 1), a0 = Math.floor(f), v = vals[a0] + (vals[Math.min(N - 1, a0 + 1)] - vals[a0]) * (f - a0);
+      const h = (MINH + v * (MAXH - MINH)) / 2, x = X0 + (X1 - X0) * j / K;
+      top.push([x, MID - h]); bot.push([x, MID + h]);
+    }
+    const seg = (p, pts) => {
+      for (let j = 1; j < K; j++) p.quadraticCurveTo(pts[j][0], pts[j][1], (pts[j][0] + pts[j + 1][0]) / 2, (pts[j][1] + pts[j + 1][1]) / 2);
+      p.lineTo(pts[K][0], pts[K][1]);
+    };
+    const body = new Path2D(); body.moveTo(top[0][0], top[0][1]); seg(body, top); body.lineTo(bot[K][0], bot[K][1]); seg(body, bot.slice().reverse()); body.closePath();
+    const tl = new Path2D(); tl.moveTo(top[0][0], top[0][1]); seg(tl, top);
+    const bl = new Path2D(); bl.moveTo(bot[0][0], bot[0][1]); seg(bl, bot);
+    g.save();
+    g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(body);
+    g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
+    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30;
+    g.stroke(tl); g.stroke(bl);
+    g.restore();
   } else if (vizMode === 'dots') {
-    // LED Matrix: columns of round lights with a slowly falling peak dot
-    const R = 14, rp = MAXH / R, rad = Math.min(8.5, rp * 0.32), cp = (X1 - X0 - 18) / (N - 1);
-    for (let i = 0; i < N; i++) peaks[i] = Math.max(vals[i], peaks[i] - 0.35 * mdt);
+    // LED Matrix: columns of round lights; optional slowly falling peak dot (gravity)
+    const cnt = dotsCount, R = 14, rp = MAXH / R, pitch = (X1 - X0 - 18) / Math.max(1, cnt - 1), rad = Math.min(8.5, rp * 0.32, pitch * 0.34);
     const lit = new Path2D(), dim = new Path2D(), pk = new Path2D();
-    for (let i = 0; i < N; i++) {
-      const x = X0 + 9 + i * cp, on = Math.round(vals[i] * R), pr = Math.min(R - 1, Math.round(peaks[i] * R));
+    for (let i = 0; i < cnt; i++) {
+      const f = cnt > 1 ? i / (cnt - 1) * (N - 1) : 0, a0 = Math.floor(f), v = vals[a0] + (vals[Math.min(N - 1, a0 + 1)] - vals[a0]) * (f - a0);
+      const x = X0 + 9 + i * pitch, on = Math.round(v * R);
       for (let r = 0; r < R; r++) {
         const y = BASE - (r + 0.5) * rp, path = r < on ? lit : dim;
         path.moveTo(x + rad, y); path.arc(x, y, rad, 0, 6.283);
       }
-      if (pr >= on) { const y = BASE - (pr + 0.5) * rp; pk.moveTo(x + rad, y); pk.arc(x, y, rad, 0, 6.283); }
+      if (dotsPeak) {
+        peaks[i] = Math.max(v, peaks[i] - 0.35 * mdt);
+        const pr = Math.min(R - 1, Math.round(peaks[i] * R));
+        if (pr >= on) { const y = BASE - (pr + 0.5) * rp; pk.moveTo(x + rad, y); pk.arc(x, y, rad, 0, 6.283); }
+      }
     }
     g.fillStyle = vizFill;
     g.globalAlpha = 0.1; g.fill(dim);
     g.globalAlpha = 1; g.fill(lit);
-    g.globalAlpha = 0.85; g.fill(pk);
+    if (dotsPeak) { g.globalAlpha = 0.85; g.fill(pk); }
     g.globalAlpha = 1;
   } else if (vizMode === 'ridge') {
-    // Ridgeline: the last few moments of the spectrum, stacked back to front
+    // Ridgeline: the last moments of the spectrum, stacked back to front, scrolling away smoothly
+    const HZ = 14, step = 20, amp = 175;
     ridgeAcc += mdt;
-    if (ridgeAcc >= 1 / 14) { ridgeAcc = 0; ridgeHist.unshift(Float32Array.from(vals)); if (ridgeHist.length > RIDGE_ROWS - 1) ridgeHist.pop(); }
-    const rows = [vals, ...ridgeHist], step = 20, amp = 175;
-    g.lineJoin = 'round'; g.lineCap = 'round';
-    for (let k = rows.length - 1; k >= 0; k--) {
-      const row = rows[k], by = BASE - k * step, depth = k / RIDGE_ROWS;
-      const p = new Path2D(); p.moveTo(X0, by - row[0] * amp);
-      for (let i = 1; i < N - 1; i++) {
-        const x0 = X0 + (X1 - X0) * i / (N - 1), x1 = X0 + (X1 - X0) * (i + 1) / (N - 1);
-        p.quadraticCurveTo(x0, by - row[i] * amp, (x0 + x1) / 2, by - (row[i] + row[i + 1]) / 2 * amp);
-      }
-      p.lineTo(X1, by - row[N - 1] * amp);
-      const area = new Path2D(p); area.lineTo(X1, by + 2); area.lineTo(X0, by + 2); area.closePath();
-      g.globalAlpha = 0.55; g.fillStyle = '#000'; g.fill(area);   // dark body hides the rows behind it
-      g.globalAlpha = 1 - depth * 0.8; g.strokeStyle = vizFill; g.lineWidth = 3 - depth * 1.5; g.stroke(p);
+    if (ridgeAcc >= 1 / HZ) { ridgeAcc = Math.min(ridgeAcc - 1 / HZ, 1 / HZ); ridgeHist.unshift(ridgePaths(vals, amp)); if (ridgeHist.length > RIDGE_ROWS - 1) ridgeHist.pop(); }
+    const phase = Math.min(1, ridgeAcc * HZ);   // how far the rows have slid toward the next slot
+    g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = vizFill;
+    const drawRow = (rp, by, fade) => {
+      g.save(); g.translate(0, by);
+      g.globalAlpha = 0.55 * fade; g.fillStyle = '#000'; g.fill(rp.area);   // dark body hides the rows behind it
+      g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
+      g.restore();
+    };
+    for (let j = ridgeHist.length - 1; j >= 0; j--) {
+      const pos = j + phase;
+      drawRow(ridgeHist[j], BASE - pos * step, Math.pow(Math.max(0, 1 - pos / (RIDGE_ROWS - 1)), 0.8));
     }
+    drawRow(ridgePaths(vals, amp), BASE, 1);
     g.globalAlpha = 1;
   }
 
@@ -896,7 +940,7 @@ function getSettings(withText) {
     main: visualColor, end: gradientColor, bg: backgroundColor, bgEnd: backgroundEndColor,
     useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
     cycleSpeed, rainbow: { on: rainbow, move: rbMove, dir: rbDir, speed: rbSpeed },
-    mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount },
+    mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
     stars: { ...starCfg }, particles: { ...partCfg }
   };
@@ -913,7 +957,7 @@ function applySettings(p) {
   if (p.mode) setMode(p.mode);
   const c = p.circ || {};
   setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count); setCtl('circSym', c.sym);
-  setCtl('mirCount', (p.mir || {}).count);
+  setCtl('mirCount', (p.mir || {}).count); setCtl('dotsCount', (p.dots || {}).count); setCtl('dotsPeak', (p.dots || {}).peak);
   setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('bgPulseAmt', p.bgPulse); setCtl('sens', p.sens);
   const st = p.stars;
   if (st) {
@@ -922,7 +966,7 @@ function applySettings(p) {
     if (typeof st.angle === 'number') { starCfg.angle = wrapDeg(st.angle); updateStarDial(); }
   }
   const q = p.particles;
-  if (q) { setCtl('partOn', q.on); setCtl('partCount', q.count); setCtl('partSize', q.size); setCtl('partSpeed', q.speed); }
+  if (q) { setCtl('partOn', q.on); setCtl('partCount', q.count); setCtl('partSize', q.size); setCtl('partSpeed', q.speed); setCtl('partSens', q.sens); }
   updateOverlayTheme(); updateSliders();
 }
 
