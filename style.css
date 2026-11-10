@@ -631,3 +631,8 @@ input[type=range]:disabled::-moz-range-thumb {
   outline: 2px solid var(--overlay-accent);
   outline-offset: -2px
 }
+
+/* The hidden attribute must win over display:flex/grid on classes (e.g. .palette-control, .settings-row) */
+[hidden] {
+  display: none !important;
+}

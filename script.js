@@ -14,6 +14,7 @@ const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
 let coverImg = null, flash = 0, bassAvg = 0.2;
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
+let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgDirX = 0, bgDirY = 1;   // bg gradient: direction vector, default top to bottom
 // Near-black picks keep their color; text on them turns white and a thin grey edge keeps them visible.
 const UI_DARK = 90, EDGE = '#8c8c8c';
 const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -27,8 +28,10 @@ const midHex = (a, b) => '#' + rgbOf(a).map((v, i) => Math.round((v + rgbOf(b)[i
 const pickerState = {
   main: { h: 52, s: 0.96, v: 0.95 },
   end: { h: 25, s: 1, v: 1 },
-  bg: { h: 0, s: 0, v: 0, hex: '#000000' }
+  bg: { h: 0, s: 0, v: 0, hex: '#000000' },
+  bgEnd: { h: 258, s: 0.82, v: 0.24, hex: '#1a0b3d' }
 };
+const PREFIX = { main: 'color', end: 'end', bg: 'bg', bgEnd: 'bgEnd' };   // which element-id prefix each picker uses
 let overlayColors = false;
 
 const rangeEls = Array.from(document.querySelectorAll('input[type=range]'));
@@ -183,10 +186,11 @@ function hexToHsv(hex) {
 }
 function updatePicker(which) {
   const st = pickerState[which], hex = st.hex || hsvToHex(st.h, st.s, st.v);
-  const prefix = which === 'main' ? 'color' : which === 'end' ? 'end' : 'bg';
+  const prefix = PREFIX[which];
   if (which === 'main') visualColor = hex;
   else if (which === 'end') gradientColor = hex;
-  else backgroundColor = hex;
+  else if (which === 'bg') backgroundColor = hex;
+  else backgroundEndColor = hex;
   const wheel = $(prefix + 'Wheel');
   const knob = $(prefix + 'HueKnob');
   const square = $(prefix + 'SV');
@@ -197,14 +201,14 @@ function updatePicker(which) {
   square.style.setProperty('--hue', `hsl(${st.h} 100% 50%)`);
   svknob.style.left = (st.s * 100) + '%';
   svknob.style.top = ((1 - st.v) * 100) + '%';
-  $(prefix === 'color' ? 'colorSwatch' : prefix === 'end' ? 'endSwatch' : 'bgSwatch').style.background = hex;
+  $(prefix + 'Swatch').style.background = hex;
   syncFields(prefix, hex);
 
   updateOverlayTheme();
   updateSliders();
 }
 function bindPicker(which) {
-  const prefix = which === 'main' ? 'color' : which === 'end' ? 'end' : 'bg';
+  const prefix = PREFIX[which];
   const wheel = $(prefix + 'Wheel');
   const square = $(prefix + 'SV');
   let mode = '';
@@ -235,6 +239,19 @@ $('gradient').onchange = e => {
   updateOverlayTheme();
   updateSliders();
 };
+// ---- background gradient ----
+function syncBgGradient() {
+  useBgGradient = $('bgGradient').checked;
+  $('bgEndWrap').hidden = !useBgGradient;
+  $('bgDirRow').hidden = !useBgGradient;
+}
+$('bgGradient').onchange = syncBgGradient;
+document.querySelectorAll('#bgDirection button').forEach(b => b.onclick = () => {
+  bgDirX = +b.dataset.dx; bgDirY = +b.dataset.dy;
+  document.querySelectorAll('#bgDirection button').forEach(o =>
+    o.setAttribute('aria-pressed', String(+o.dataset.dx === bgDirX && +o.dataset.dy === bgDirY)));
+});
+syncBgGradient();
 function syncFields(prefix, hex) {
   const n = parseInt(hex.slice(1), 16), v = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   const set = (id, val) => { const el = $(id); if (el && document.activeElement !== el) el.value = val; };
@@ -242,7 +259,7 @@ function syncFields(prefix, hex) {
   ['R', 'G', 'B'].forEach((c, i) => set(prefix + c, v[i]));
 }
 function bindFields(which) {
-  const prefix = which === 'main' ? 'color' : which === 'end' ? 'end' : 'bg', st = pickerState[which];
+  const prefix = PREFIX[which], st = pickerState[which];
   const current = () => st.hex || hsvToHex(st.h, st.s, st.v);
   const apply = (r, gr, b) => {
     const hex = '#' + [r, gr, b].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -263,8 +280,9 @@ function bindFields(which) {
   }));
   [hexIn, ...ch].forEach(el => el.addEventListener('blur', () => syncFields(prefix, current())));
 }
-bindPicker('main'); bindPicker('end'); bindPicker('bg'); bindFields('main'); bindFields('end'); bindFields('bg');
-updatePicker('main'); updatePicker('end'); updatePicker('bg');
+bindPicker('main'); bindPicker('end'); bindPicker('bg'); bindPicker('bgEnd');
+bindFields('main'); bindFields('end'); bindFields('bg'); bindFields('bgEnd');
+updatePicker('main'); updatePicker('end'); updatePicker('bg'); updatePicker('bgEnd');
 updateOverlayTheme();
 updateSliders();
 
@@ -334,7 +352,15 @@ function fitText(txt, weight, size, maxW, ls = 0) {
 function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
-  g.fillStyle = backgroundColor; g.fillRect(0, 0, 1920, 1080);
+  if (useBgGradient) {
+    // Gradient line passes through the canvas center; its length makes the corners hit the exact start/end colors.
+    const W = 1920, H = 1080, len = Math.hypot(bgDirX, bgDirY) || 1, ux = bgDirX / len, uy = bgDirY / len;
+    const half = (Math.abs(ux) * W + Math.abs(uy) * H) / 2;
+    const bgGrad = g.createLinearGradient(W / 2 - ux * half, H / 2 - uy * half, W / 2 + ux * half, H / 2 + uy * half);
+    bgGrad.addColorStop(0, backgroundColor); bgGrad.addColorStop(1, backgroundEndColor);
+    g.fillStyle = bgGrad;
+  } else g.fillStyle = backgroundColor;
+  g.fillRect(0, 0, 1920, 1080);
   drawStars(bass, dt);
 
   // Resolve the selected color (or horizontal gradient) for both spectrum and default artwork.

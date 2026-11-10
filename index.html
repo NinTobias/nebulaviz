@@ -76,6 +76,9 @@
       <details class="group">
         <summary>Background</summary>
         <div class="group-body">
+          <div class="settings-row">
+            <label class="toggle"><input type="checkbox" id="bgGradient"> Gradient</label>
+          </div>
           <div class="color-tools">
             <div class="palette-control">
               <div class="palette-heading"><span class="swatch" id="bgSwatch"></span> Background color</div>
@@ -90,6 +93,42 @@
                 <input type="number" id="bgG" min="0" max="255" aria-label="Background green">
                 <input type="number" id="bgB" min="0" max="255" aria-label="Background blue">
               </div>
+            </div>
+            <div class="palette-control" id="bgEndWrap" hidden>
+              <div class="palette-heading"><span class="swatch" id="bgEndSwatch"></span> Background gradient end</div>
+              <div class="hue-wheel" id="bgEndWheel" role="group" aria-label="Background gradient end color picker">
+                <span class="hue-knob" id="bgEndHueKnob"></span>
+                <div class="sv-square" id="bgEndSV" style="--hue:#ff0000"><span class="sv-knob" id="bgEndSVKnob"></span>
+                </div>
+              </div>
+              <div class="rgb-row">
+                <input type="text" class="hex-in" id="bgEndHexIn" maxlength="7" spellcheck="false"
+                  aria-label="Background gradient end hex">
+                <input type="number" id="bgEndR" min="0" max="255" aria-label="Background gradient end red">
+                <input type="number" id="bgEndG" min="0" max="255" aria-label="Background gradient end green">
+                <input type="number" id="bgEndB" min="0" max="255" aria-label="Background gradient end blue">
+              </div>
+            </div>
+          </div>
+          <div class="settings-row" id="bgDirRow" hidden>
+            <span class="seglabel">Direction</span>
+            <div class="seg" id="bgDirection" role="group" aria-label="Background gradient direction">
+              <button type="button" data-dx="0" data-dy="-1" aria-pressed="false" aria-label="Gradient direction: Top"
+                title="Top">↑</button>
+              <button type="button" data-dx="1" data-dy="-1" aria-pressed="false"
+                aria-label="Gradient direction: Bottom left to top right" title="Bottom left to top right">↗</button>
+              <button type="button" data-dx="1" data-dy="0" aria-pressed="false"
+                aria-label="Gradient direction: Left to right" title="Left to right">→</button>
+              <button type="button" data-dx="1" data-dy="1" aria-pressed="false"
+                aria-label="Gradient direction: Top left to bottom right" title="Top left to bottom right">↘</button>
+              <button type="button" data-dx="0" data-dy="1" aria-pressed="true"
+                aria-label="Gradient direction: Top to bottom" title="Top to bottom">↓</button>
+              <button type="button" data-dx="-1" data-dy="1" aria-pressed="false"
+                aria-label="Gradient direction: Top right to bottom left" title="Top right to bottom left">↙</button>
+              <button type="button" data-dx="-1" data-dy="0" aria-pressed="false"
+                aria-label="Gradient direction: Right to left" title="Right to left">←</button>
+              <button type="button" data-dx="-1" data-dy="-1" aria-pressed="false"
+                aria-label="Gradient direction: Bottom right to top left" title="Bottom right to top left">↖</button>
             </div>
           </div>
         </div>
@@ -125,9 +164,11 @@
               <span class="seglabel">Direction</span>
               <div class="seg" id="starDirection" role="group" aria-label="Star movement direction">
                 <button type="button" data-dir="up" aria-pressed="false" aria-label="Move up" title="Up">↑</button>
-                <button type="button" data-dir="down" aria-pressed="false" aria-label="Move down" title="Down">↓</button>
+                <button type="button" data-dir="down" aria-pressed="false" aria-label="Move down"
+                  title="Down">↓</button>
                 <button type="button" data-dir="left" aria-pressed="true" aria-label="Move left" title="Left">←</button>
-                <button type="button" data-dir="right" aria-pressed="false" aria-label="Move right" title="Right">→</button>
+                <button type="button" data-dir="right" aria-pressed="false" aria-label="Move right"
+                  title="Right">→</button>
               </div>
             </div>
           </div>
