@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
 let coverImg = null, flash = 0, bassAvg = 0.2;
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
-let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgDirX = 0, bgDirY = 1;   // bg gradient: direction vector, default top to bottom
+let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;   // bg gradient angle in degrees: 0 = up, 90 = right, 180 = down (default)
 // Near-black picks keep their color; text on them turns white and a thin grey edge keeps them visible.
 const UI_DARK = 90, EDGE = '#8c8c8c';
 const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -202,6 +202,7 @@ function updatePicker(which) {
   svknob.style.left = (st.s * 100) + '%';
   svknob.style.top = ((1 - st.v) * 100) + '%';
   $(prefix + 'Swatch').style.background = hex;
+  if (which === 'bg' || which === 'bgEnd') updateDial();
   syncFields(prefix, hex);
 
   updateOverlayTheme();
@@ -246,11 +247,49 @@ function syncBgGradient() {
   $('bgDirRow').hidden = !useBgGradient;
 }
 $('bgGradient').onchange = syncBgGradient;
-document.querySelectorAll('#bgDirection button').forEach(b => b.onclick = () => {
-  bgDirX = +b.dataset.dx; bgDirY = +b.dataset.dy;
-  document.querySelectorAll('#bgDirection button').forEach(o =>
-    o.setAttribute('aria-pressed', String(+o.dataset.dx === bgDirX && +o.dataset.dy === bgDirY)));
+// Direction: the dial (drag), the angle field and the preset buttons all edit the same angle.
+const SNAP_DEG = 4;   // magnetic zone around the 8 main directions
+const bgDial = $('bgDial'), bgAngleIn = $('bgAngleIn'), bgDirBtns = document.querySelectorAll('#bgDirection button');
+function updateDial() {
+  const a = bgAngle;
+  bgDial.style.setProperty('--angle', a + 'deg');
+  bgDial.style.background = `linear-gradient(${a}deg, ${backgroundColor}, ${backgroundEndColor})`;   // live preview
+  bgDial.setAttribute('aria-valuenow', String(Math.round(a) % 360));
+  if (document.activeElement !== bgAngleIn) bgAngleIn.value = Math.round(a) % 360;
+  bgDirBtns.forEach(o => o.setAttribute('aria-pressed', String(Math.abs(a - +o.dataset.angle) < 0.01)));
+}
+function setAngle(a) { bgAngle = ((a % 360) + 360) % 360; updateDial(); }
+function dialAngle(e) {
+  const r = bgDial.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  if (Math.hypot(dx, dy) < 6) return null;   // too close to the center to tell a direction
+  let a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;   // 0 = up, clockwise
+  if (e.shiftKey) a = Math.round(a / 15) * 15;                  // Shift: hard snap to 15° steps
+  else if (!e.altKey) {                                          // default: magnetic snap, Alt turns it off
+    const n = Math.round(a / 45) * 45;
+    if (Math.abs(a - n) <= SNAP_DEG) a = n;
+  }
+  return a % 360;
+}
+let dialDrag = false;
+bgDial.addEventListener('pointerdown', e => {
+  dialDrag = true; bgDial.setPointerCapture(e.pointerId);
+  const a = dialAngle(e); if (a !== null) setAngle(a);
 });
+bgDial.addEventListener('pointermove', e => {
+  if (!dialDrag) return;
+  const a = dialAngle(e); if (a !== null) setAngle(a);
+});
+['pointerup', 'pointercancel'].forEach(t => bgDial.addEventListener(t, () => { dialDrag = false; }));
+bgDial.addEventListener('keydown', e => {
+  const step = e.shiftKey ? 15 : 1, k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowUp') setAngle(bgAngle + step);
+  else if (k === 'ArrowLeft' || k === 'ArrowDown') setAngle(bgAngle - step);
+  else return;
+  e.preventDefault();
+});
+bgAngleIn.addEventListener('input', () => { const v = parseFloat(bgAngleIn.value); if (isFinite(v)) setAngle(v); });
+bgAngleIn.addEventListener('blur', updateDial);
+bgDirBtns.forEach(b => b.onclick = () => setAngle(+b.dataset.angle));
 syncBgGradient();
 function syncFields(prefix, hex) {
   const n = parseInt(hex.slice(1), 16), v = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -354,7 +393,7 @@ function frame() {
   const bass = analyse(dt); ui();
   if (useBgGradient) {
     // Gradient line passes through the canvas center; its length makes the corners hit the exact start/end colors.
-    const W = 1920, H = 1080, len = Math.hypot(bgDirX, bgDirY) || 1, ux = bgDirX / len, uy = bgDirY / len;
+    const W = 1920, H = 1080, rad = bgAngle * Math.PI / 180, ux = Math.sin(rad), uy = -Math.cos(rad);
     const half = (Math.abs(ux) * W + Math.abs(uy) * H) / 2;
     const bgGrad = g.createLinearGradient(W / 2 - ux * half, H / 2 - uy * half, W / 2 + ux * half, H / 2 + uy * half);
     bgGrad.addColorStop(0, backgroundColor); bgGrad.addColorStop(1, backgroundEndColor);

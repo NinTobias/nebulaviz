@@ -112,23 +112,30 @@
           </div>
           <div class="settings-row" id="bgDirRow" hidden>
             <span class="seglabel">Direction</span>
-            <div class="seg" id="bgDirection" role="group" aria-label="Background gradient direction">
-              <button type="button" data-dx="0" data-dy="-1" aria-pressed="false" aria-label="Gradient direction: Top"
-                title="Top">↑</button>
-              <button type="button" data-dx="1" data-dy="-1" aria-pressed="false"
-                aria-label="Gradient direction: Bottom left to top right" title="Bottom left to top right">↗</button>
-              <button type="button" data-dx="1" data-dy="0" aria-pressed="false"
-                aria-label="Gradient direction: Left to right" title="Left to right">→</button>
-              <button type="button" data-dx="1" data-dy="1" aria-pressed="false"
-                aria-label="Gradient direction: Top left to bottom right" title="Top left to bottom right">↘</button>
-              <button type="button" data-dx="0" data-dy="1" aria-pressed="true"
-                aria-label="Gradient direction: Top to bottom" title="Top to bottom">↓</button>
-              <button type="button" data-dx="-1" data-dy="1" aria-pressed="false"
-                aria-label="Gradient direction: Top right to bottom left" title="Top right to bottom left">↙</button>
-              <button type="button" data-dx="-1" data-dy="0" aria-pressed="false"
-                aria-label="Gradient direction: Right to left" title="Right to left">←</button>
-              <button type="button" data-dx="-1" data-dy="-1" aria-pressed="false"
-                aria-label="Gradient direction: Bottom right to top left" title="Bottom right to top left">↖</button>
+            <div class="dir-dial" id="bgDial" role="slider" tabindex="0" aria-label="Background gradient angle"
+              aria-valuemin="0" aria-valuemax="359" aria-valuenow="180"
+              title="Drag to set the angle. Shift = 15° steps, Alt = no snapping"><span class="dial-line"></span></div>
+            <div class="dir-side">
+              <div class="seg" id="bgDirection" role="group" aria-label="Background gradient direction presets">
+                <button type="button" data-angle="0" aria-pressed="false" aria-label="Gradient direction: Bottom to top"
+                  title="Bottom to top">↑</button>
+                <button type="button" data-angle="45" aria-pressed="false"
+                  aria-label="Gradient direction: Bottom left to top right" title="Bottom left to top right">↗</button>
+                <button type="button" data-angle="90" aria-pressed="false"
+                  aria-label="Gradient direction: Left to right" title="Left to right">→</button>
+                <button type="button" data-angle="135" aria-pressed="false"
+                  aria-label="Gradient direction: Top left to bottom right" title="Top left to bottom right">↘</button>
+                <button type="button" data-angle="180" aria-pressed="true"
+                  aria-label="Gradient direction: Top to bottom" title="Top to bottom">↓</button>
+                <button type="button" data-angle="225" aria-pressed="false"
+                  aria-label="Gradient direction: Top right to bottom left" title="Top right to bottom left">↙</button>
+                <button type="button" data-angle="270" aria-pressed="false"
+                  aria-label="Gradient direction: Right to left" title="Right to left">←</button>
+                <button type="button" data-angle="315" aria-pressed="false"
+                  aria-label="Gradient direction: Bottom right to top left" title="Bottom right to top left">↖</button>
+              </div>
+              <label class="toggle">Angle <input type="number" class="angle-in" id="bgAngleIn" min="0" max="360"
+                  step="1" value="180" aria-label="Gradient angle in degrees">°</label>
             </div>
           </div>
         </div>

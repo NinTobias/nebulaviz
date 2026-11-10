@@ -636,3 +636,106 @@ input[type=range]:disabled::-moz-range-thumb {
 [hidden] {
   display: none !important;
 }
+
+/* --- background gradient direction dial --- */
+.dir-dial {
+  --angle: 180deg;
+  position: relative;
+  flex: none;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  border: 1px solid #ffffff55;
+  cursor: grab;
+  touch-action: none;
+}
+
+.dir-dial:active {
+  cursor: grabbing;
+}
+
+.dir-dial:focus-visible {
+  outline: 2px solid var(--overlay-accent);
+  outline-offset: 3px;
+}
+
+/* tick marks at the 8 main directions */
+.dir-dial::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-conic-gradient(from -1deg, #ffffffcc 0 2deg, transparent 2deg 45deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
+}
+
+.dir-dial::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 3px);
+  top: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 3px #000;
+  pointer-events: none;
+}
+
+.dial-line {
+  position: absolute;
+  left: calc(50% - 1px);
+  top: 10px;
+  width: 2px;
+  height: calc(50% - 10px);
+  background: #fff;
+  box-shadow: 0 0 3px #000;
+  transform-origin: 50% 100%;
+  transform: rotate(var(--angle));
+  pointer-events: none;
+}
+
+.dial-line::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #000;
+  box-shadow: 0 0 3px #000;
+}
+
+.dir-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#bgDirection button {
+  width: 34px;
+}
+
+.angle-in {
+  width: 64px;
+  background: var(--panel);
+  border: 1px solid #2f2d20;
+  color: var(--ink);
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.angle-in::-webkit-inner-spin-button,
+.angle-in::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
