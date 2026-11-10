@@ -17,6 +17,8 @@ let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
 let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190;
 const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
 const MID = BASE - MAXH / 2;                           // mirrored layout: centre line, same footprint as the normal bars
+let cycleSpeed = 15, rainbow = false, rbMove = true, rbDir = 1, rbSpeed = 60, rbOffset = 0, circSym = true;
+let volume = 1, muted = false, outGain = null;
 let mediaRecorder = null, recDest = null, recChunks = [], recNote = '';
 let autoColorCycle = false, colorCycleHue = 52;
 let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, beatNow = false;
@@ -94,6 +96,7 @@ function setup() {
   const mute = ctx.createGain(); mute.gain.value = 0;
   analyser.connect(mute); mute.connect(ctx.destination);
   freq = new Float32Array(analyser.frequencyBinCount);
+  outGain = ctx.createGain(); outGain.connect(ctx.destination); applyVol();
   layout();
 }
 
@@ -118,7 +121,7 @@ function stopAll() { for (const n of [src, asrc]) if (n) { n.onended = null; try
 function startAt(off) {
   setup();
   stopAll();
-  src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  src = ctx.createBufferSource(); src.buffer = buf; src.connect(outGain);
   if (recDest) src.connect(recDest);   // keep the recording's audio alive across seeks/resumes
   src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); stopRecording('Song ended. Video saved.'); } };
   src.start(0, off);
@@ -137,7 +140,7 @@ $('song').onchange = async e => {
   $('status').textContent = 'Decoding audio…';
   try {
     buf = await ctx.decodeAudioData(await f.arrayBuffer());
-    $('title').value = f.name.replace(/\.[^.]+$/, '');
+    $('title').value = f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
     stopAll();
     playing = false; icon(false); vals.fill(0);
     offset = 0; $('play').disabled = false; $('seek').disabled = false;
@@ -261,6 +264,7 @@ function bindPicker(which) {
 $('gradient').onchange = e => {
   useGradient = e.target.checked;
   $('endColorWrap').hidden = !useGradient;
+  updatePicker('end');
   updateOverlayTheme();
   updateSliders();
 };
@@ -362,7 +366,36 @@ $('circRadius').oninput = e => { circRadius = +e.target.value; updateSliders(); 
 $('circLength').oninput = e => { circLength = +e.target.value; updateSliders(); };
 $('circWidth').oninput = e => { circWidth = +e.target.value; updateSliders(); };
 $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
-$('autoColorCycle').onchange = e => { autoColorCycle = e.target.checked; colorCycleHue = pickerState.main.h; };
+$('autoColorCycle').onchange = e => { autoColorCycle = e.target.checked; syncRainbowUI(); };
+$('cycleSpeed').oninput = e => { cycleSpeed = +e.target.value; updateSliders(); };
+$('rainbow').onchange = e => { rainbow = e.target.checked; syncRainbowUI(); };
+$('rbMove').onchange = e => { rbMove = e.target.checked; syncRainbowUI(); };
+$('rbDir').onchange = e => { rbDir = +e.target.value; };
+$('rbSpeed').oninput = e => { rbSpeed = +e.target.value; updateSliders(); };
+$('circSym').onchange = e => { circSym = e.target.checked; };
+function syncRainbowUI() {
+  $('cycleSpeed').disabled = !autoColorCycle;
+  $('rbMove').disabled = !rainbow;
+  $('rbDir').disabled = !(rainbow && rbMove);
+  $('rbSpeed').disabled = !(rainbow && rbMove);
+  $('colorTools').classList.toggle('off', rainbow);
+  updateSliders();
+}
+syncRainbowUI();
+
+// Volume
+const SPK_ON = '<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>';
+const SPK_OFF = '<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+function applyVol() {
+  const off = muted || volume === 0;
+  if (outGain) outGain.gain.value = off ? 0 : volume * volume;   // squared = more natural slider feel
+  $('muteBtn').innerHTML = off ? SPK_OFF : SPK_ON;
+  const t = off ? 'Unmute (M)' : 'Mute (M)';
+  $('muteBtn').setAttribute('aria-label', t); $('muteBtn').title = t;
+}
+$('vol').oninput = e => { volume = +e.target.value; if (volume > 0) muted = false; applyVol(); updateSliders(); };
+$('muteBtn').onclick = e => { muted = !muted; applyVol(); if (e.detail) $('muteBtn').blur(); };
+applyVol();
 $('bassPulse').onchange = e => { bassPulse = e.target.checked; $('pulseAmt').disabled = !bassPulse; updateSliders(); };
 $('pulseAmt').oninput = e => { pulseAmt = +e.target.value; updateSliders(); };
 $('bgAudioReactive').onchange = e => { bgAudioReactive = e.target.checked; };
@@ -461,18 +494,18 @@ function spawnBurst() {
   const c2 = useGradient ? gradientColor : visualColor;
   for (let i = 0; i < partCfg.count && parts.length < 1500; i++) {
     const sp = (120 + Math.random() * 260) * partCfg.speed;
-    let x, y, a, t;
+    let x, y, a, t, tr;
     if (vizMode === 'circular') {               // explode outward from the ring
       a = Math.random() * 6.283;
       x = CIRC_CX + Math.cos(a) * (circRadius + Math.random() * 20); y = CIRC_CY + Math.sin(a) * (circRadius + Math.random() * 20);
-      t = Math.abs(((a / 6.283) * 2) % 2 - 1);
+      t = Math.abs(((a / 6.283) * 2) % 2 - 1); tr = ((a / 6.283) + 0.25) % 1;
     } else {                                    // shoot up from the bars (and down too in mirrored mode)
-      t = Math.random(); x = X0 + t * (X1 - X0);
+      t = tr = Math.random(); x = X0 + t * (X1 - X0);
       const up = vizMode === 'mirrored' && Math.random() < 0.5 ? 1 : -1;
       y = vizMode === 'mirrored' ? MID : BASE;
       a = up * Math.PI / 2 + (Math.random() - 0.5) * 1.2;
     }
-    parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 0.5 + Math.random() * 0.5, r: partCfg.size * (0.6 + Math.random() * 0.9), col: lerpHex(visualColor, c2, t) });
+    parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 0.5 + Math.random() * 0.5, r: partCfg.size * (0.6 + Math.random() * 0.9), col: rainbow ? `hsl(${(rbOffset + tr * 360) % 360} 100% 55%)` : lerpHex(visualColor, c2, t) });
   }
 }
 function drawParticles(dt) {
@@ -506,10 +539,13 @@ function frame() {
   if (beatNow) { beatNow = false; spawnBurst(); }
 
   if (autoColorCycle && playing) {
-    colorCycleHue = (colorCycleHue + dt * 15) % 360;
-    pickerState.main.h = colorCycleHue; pickerState.main.hex = null;
+    const d = dt * cycleSpeed;
+    pickerState.main.h = (pickerState.main.h + d) % 360; pickerState.main.hex = null;
+    pickerState.end.h = (pickerState.end.h + d) % 360; pickerState.end.hex = null;
     updatePicker('main');
+    if (useGradient) updatePicker('end');
   }
+  if (rainbow && rbMove && playing) rbOffset = (((rbOffset - rbDir * rbSpeed * dt) % 360) + 360) % 360;
 
   // Background rendering
   if (backgroundImg) {
@@ -544,17 +580,24 @@ function frame() {
   const barGradient = g.createLinearGradient(X0, 0, X1, 0);
   barGradient.addColorStop(0, c1); barGradient.addColorStop(1, c2);
 
+  // Rainbow: every hue across the bars (or around the ring); rbOffset slides it
+  let vizFill = barGradient;
+  if (rainbow) {
+    vizFill = (vizMode === 'circular' && g.createConicGradient) ? g.createConicGradient(-Math.PI / 2, CIRC_CX, CIRC_CY) : g.createLinearGradient(X0, 0, X1, 0);
+    for (let k = 0; k <= 24; k++) vizFill.addColorStop(k / 24, `hsl(${(rbOffset + k * 15) % 360} 100% 55%)`);
+  }
+
   // --- RENDER VISUALIZER MODES ---
   if (vizMode === 'bars') {
     const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
-    g.fillStyle = barGradient;
+    g.fillStyle = vizFill;
     for (let i = 0; i < N; i++) {
       const h = MINH + vals[i] * (MAXH - MINH);
       const x = X0 + i * (w + gap), y = BASE - h;
       g.fillRect(x, y, w, h);
       const tx = (x + w / 2 - X0) / (X1 - X0);
       const br = Math.max(r1 + (r2 - r1) * tx, g1 + (g2 - g1) * tx, b1 + (b2 - b1) * tx);
-      let o = Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
+      let o = rainbow ? 0 : Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
       o = o * o * (3 - 2 * o);
       if (o > 0.01) {
         const lw = 1 + o;
@@ -566,10 +609,10 @@ function frame() {
   } else if (vizMode === 'circular') {
     // ring centred on the canvas; bass at the top, mirrored left/right so it looks symmetric
     const R = circRadius, len = Math.max(MINH + 2, Math.min(circLength, CIRC_MAX - R));
-    g.strokeStyle = barGradient; g.lineWidth = circWidth; g.lineCap = 'round';
+    g.strokeStyle = vizFill; g.lineWidth = circWidth; g.lineCap = 'round';
     g.beginPath();
     for (let i = 0; i < circCount; i++) {
-      const f = i / circCount, sym = f < 0.5 ? f * 2 : (1 - f) * 2;
+      const f = i / circCount, sym = !circSym ? f : f < 0.5 ? f * 2 : (1 - f) * 2;   // asymmetric = the normal bar order wrapped around the circle
       const v = vals[Math.min(N - 1, Math.round(sym * (N - 1)))];
       const a = -Math.PI / 2 + f * 2 * Math.PI, l = MINH + v * (len - MINH);
       g.moveTo(CIRC_CX + Math.cos(a) * R, CIRC_CY + Math.sin(a) * R);
@@ -578,11 +621,10 @@ function frame() {
     g.stroke(); g.lineCap = 'butt';
   } else if (vizMode === 'mirrored') {
     const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
-    g.fillStyle = barGradient;
+    g.fillStyle = vizFill;
     for (let i = 0; i < N; i++) {
       const h = (MINH + vals[i] * (MAXH - MINH)) / 2, x = X0 + i * (w + gap);
-      g.fillRect(x, MID - h, w, h);   // up
-      g.fillRect(x, MID, w, h);       // down (stays inside the original bar area, clear of cover and text)
+      g.fillRect(x, MID - h, w, h * 2);   // one rectangle per bar = no seam in the middle
     }
   }
 
@@ -711,7 +753,8 @@ function getSettings(withText) {
     ...(withText ? { artist: $('artist').value, title: $('title').value, extra: $('extra').value } : {}),
     main: visualColor, end: gradientColor, bg: backgroundColor, bgEnd: backgroundEndColor,
     useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
-    mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount },
+    cycleSpeed, rainbow: { on: rainbow, move: rbMove, dir: rbDir, speed: rbSpeed },
+    mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, sens,
     stars: { ...starCfg }, particles: { ...partCfg }
   };
@@ -722,9 +765,12 @@ function applySettings(p) {
   setCtl('gradient', p.useGrad); setCtl('bgGradient', p.useBgGrad);
   setCtl('overlayColors', p.overlay); setCtl('autoColorCycle', p.autoCycle);
   if (typeof p.bgAngle === 'number') { bgAngle = wrapDeg(p.bgAngle); updateDial(); }
+  setCtl('cycleSpeed', p.cycleSpeed);
+  const rb = p.rainbow;
+  if (rb) { setCtl('rainbow', rb.on); setCtl('rbMove', rb.move); setCtl('rbDir', rb.dir); setCtl('rbSpeed', rb.speed); }
   if (p.mode) setMode(p.mode);
   const c = p.circ || {};
-  setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count);
+  setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count); setCtl('circSym', c.sym);
   setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('sens', p.sens);
   const st = p.stars;
   if (st) {
@@ -852,6 +898,8 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') {
     e.preventDefault();
     $('play').click();
+  } else if (e.key.toLowerCase() === 'm') {
+    $('muteBtn').click();
   } else if (e.key.toLowerCase() === 'f') {
     e.preventDefault();
     toggleFS();
