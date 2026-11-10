@@ -79,7 +79,7 @@ const stars = Array.from({ length: 600 }, () => ({
   r: 0.5 + Math.random() * 1.8, k: 0.1 + Math.random() * 0.4,   // k: speed along the travel direction
   c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6 // c: slight sideways drift
 }));
-const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, dirX: -1, dirY: 0 };
+const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, angle: 270 };   // angle: flight direction in degrees, 0 = up, 90 = right, 180 = down, 270 = left (default)
 
 function setup() {
   if (ctx) return;
@@ -247,49 +247,52 @@ function syncBgGradient() {
   $('bgDirRow').hidden = !useBgGradient;
 }
 $('bgGradient').onchange = syncBgGradient;
-// Direction: the dial (drag), the angle field and the preset buttons all edit the same angle.
+// Direction dials (background gradient + star flight): drag the dial, type an angle, or use the arrow keys.
+// 0° = up, 90° = right, 180° = down, 270° = left.
 const SNAP_DEG = 4;   // magnetic zone around the 8 main directions
-const bgDial = $('bgDial'), bgAngleIn = $('bgAngleIn'), bgDirBtns = document.querySelectorAll('#bgDirection button');
-function updateDial() {
-  const a = bgAngle;
-  bgDial.style.setProperty('--angle', a + 'deg');
-  bgDial.style.background = `linear-gradient(${a}deg, ${backgroundColor}, ${backgroundEndColor})`;   // live preview
-  bgDial.setAttribute('aria-valuenow', String(Math.round(a) % 360));
-  if (document.activeElement !== bgAngleIn) bgAngleIn.value = Math.round(a) % 360;
-  bgDirBtns.forEach(o => o.setAttribute('aria-pressed', String(Math.abs(a - +o.dataset.angle) < 0.01)));
+function makeDial({ dial, input, get, set, onUpdate }) {
+  const update = () => {
+    const a = get();
+    dial.style.setProperty('--angle', a + 'deg');
+    dial.setAttribute('aria-valuenow', String(Math.round(a) % 360));
+    if (document.activeElement !== input) input.value = Math.round(a) % 360;
+    if (onUpdate) onUpdate(a);
+  };
+  const apply = a => { set(((a % 360) + 360) % 360); update(); };
+  const angleAt = e => {
+    const r = dial.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    if (Math.hypot(dx, dy) < 6) return null;   // too close to the center to tell a direction
+    let a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;   // 0 = up, clockwise
+    if (e.shiftKey) a = Math.round(a / 15) * 15;                  // Shift: hard snap to 15° steps
+    else if (!e.altKey) {                                          // default: magnetic snap, Alt turns it off
+      const n = Math.round(a / 45) * 45;
+      if (Math.abs(a - n) <= SNAP_DEG) a = n;
+    }
+    return a % 360;
+  };
+  let drag = false;
+  const drive = e => { const a = angleAt(e); if (a !== null) apply(a); };
+  dial.addEventListener('pointerdown', e => { drag = true; dial.setPointerCapture(e.pointerId); drive(e); });
+  dial.addEventListener('pointermove', e => { if (drag) drive(e); });
+  ['pointerup', 'pointercancel'].forEach(t => dial.addEventListener(t, () => { drag = false; }));
+  dial.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 15 : 1, k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowUp') apply(get() + step);
+    else if (k === 'ArrowLeft' || k === 'ArrowDown') apply(get() - step);
+    else return;
+    e.preventDefault();
+  });
+  input.addEventListener('input', () => { const v = parseFloat(input.value); if (isFinite(v)) apply(v); });
+  input.addEventListener('blur', update);
+  update();
+  return update;
 }
-function setAngle(a) { bgAngle = ((a % 360) + 360) % 360; updateDial(); }
-function dialAngle(e) {
-  const r = bgDial.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  if (Math.hypot(dx, dy) < 6) return null;   // too close to the center to tell a direction
-  let a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;   // 0 = up, clockwise
-  if (e.shiftKey) a = Math.round(a / 15) * 15;                  // Shift: hard snap to 15° steps
-  else if (!e.altKey) {                                          // default: magnetic snap, Alt turns it off
-    const n = Math.round(a / 45) * 45;
-    if (Math.abs(a - n) <= SNAP_DEG) a = n;
-  }
-  return a % 360;
-}
-let dialDrag = false;
-bgDial.addEventListener('pointerdown', e => {
-  dialDrag = true; bgDial.setPointerCapture(e.pointerId);
-  const a = dialAngle(e); if (a !== null) setAngle(a);
+const bgDial = $('bgDial');
+const updateDial = makeDial({
+  dial: bgDial, input: $('bgAngleIn'),
+  get: () => bgAngle, set: a => { bgAngle = a; },
+  onUpdate: a => { bgDial.style.background = `linear-gradient(${a}deg, ${backgroundColor}, ${backgroundEndColor})`; }   // live preview
 });
-bgDial.addEventListener('pointermove', e => {
-  if (!dialDrag) return;
-  const a = dialAngle(e); if (a !== null) setAngle(a);
-});
-['pointerup', 'pointercancel'].forEach(t => bgDial.addEventListener(t, () => { dialDrag = false; }));
-bgDial.addEventListener('keydown', e => {
-  const step = e.shiftKey ? 15 : 1, k = e.key;
-  if (k === 'ArrowRight' || k === 'ArrowUp') setAngle(bgAngle + step);
-  else if (k === 'ArrowLeft' || k === 'ArrowDown') setAngle(bgAngle - step);
-  else return;
-  e.preventDefault();
-});
-bgAngleIn.addEventListener('input', () => { const v = parseFloat(bgAngleIn.value); if (isFinite(v)) setAngle(v); });
-bgAngleIn.addEventListener('blur', updateDial);
-bgDirBtns.forEach(b => b.onclick = () => setAngle(+b.dataset.angle));
 syncBgGradient();
 function syncFields(prefix, hex) {
   const n = parseInt(hex.slice(1), 16), v = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -366,11 +369,11 @@ function analyse(dt) {
 
 function drawStars(bass, dt) {
   if (!starCfg.on) return;
-  const dx = starCfg.dirX, dy = starCfg.dirY, sp = (1 + bass * starCfg.boost) * starCfg.speed * dt * 60, f = starCfg.flash ? flash * starCfg.light : 0;
+  const rad = starCfg.angle * Math.PI / 180, dx = Math.sin(rad), dy = -Math.cos(rad), sp = (1 + bass * starCfg.boost) * starCfg.speed * dt * 60, f = starCfg.flash ? flash * starCfg.light : 0;
   g.fillStyle = '#fff';
   for (let i = 0; i < starCfg.count; i++) {
     const s = stars[i];
-    s.x += (dx * s.k + dy * s.c) * sp; s.y += (dy * s.k + dx * s.c) * sp;
+    s.x += (dx * s.k - dy * s.c) * sp; s.y += (dy * s.k + dx * s.c) * sp;   // along the direction + slight perpendicular drift
     if (s.x < -5) s.x = 1925; else if (s.x > 1925) s.x = -5;
     if (s.y < -5) s.y = 1085; else if (s.y > 1085) s.y = -5;
     g.globalAlpha = Math.min(1, s.a + f * 0.4);
@@ -469,24 +472,7 @@ $('starDensity').oninput = e => { starCfg.count = +e.target.value; updateSliders
 $('starSpeed').oninput = e => { starCfg.speed = +e.target.value; updateSliders(); };
 $('starBoost').oninput = e => { starCfg.boost = +e.target.value; updateSliders(); };
 $('starLight').oninput = e => { starCfg.light = +e.target.value; updateSliders(); };
-// One horizontal and one vertical direction may be active together.
-// Choosing a new direction replaces only the previous direction on that axis.
-document.querySelectorAll('#starDirection button').forEach(b => b.onclick = () => {
-  const value = b.dataset.dir;
-  if (value === 'left' || value === 'right') {
-    starCfg.dirX = value === 'left' ? -1 : 1;
-  } else {
-    starCfg.dirY = value === 'up' ? -1 : 1;
-  }
-  document.querySelectorAll('#starDirection button').forEach(o => {
-    const d = o.dataset.dir;
-    const active = (d === 'left' && starCfg.dirX === -1) ||
-      (d === 'right' && starCfg.dirX === 1) ||
-      (d === 'up' && starCfg.dirY === -1) ||
-      (d === 'down' && starCfg.dirY === 1);
-    o.setAttribute('aria-pressed', String(active));
-  });
-});
+makeDial({ dial: $('starDial'), input: $('starAngleIn'), get: () => starCfg.angle, set: a => { starCfg.angle = a; } });
 syncStarUI(); updateSliders();
 
 // ---- full screen + play bar toggle (buttons show on hover, like a video player) ----
