@@ -21,7 +21,9 @@ let cycleSpeed = 15, rainbow = false, rbMove = true, rbDir = 1, rbSpeed = 60, rb
 let volume = 1, muted = false, outGain = null;
 let mediaRecorder = null, recDest = null, recChunks = [], recNote = '';
 let autoColorCycle = false, colorCycleHue = 52;
-let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, beatNow = false;
+let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, bgPulseAmt = 0.15, beatNow = false;
+// Lock overlay color: uiMain/uiEnd hold the colors the user last SET (picker, hex, preset). Auto color cycling doesn't touch them.
+let lockOverlay = false, uiMain = '#f2d90a', uiEnd = '#ff6a00';
 
 const UI_DARK = 90, EDGE = '#8c8c8c';
 const rgbOf = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -41,6 +43,14 @@ const pickerState = {
 const PREFIX = { main: 'color', end: 'end', bg: 'bg', bgEnd: 'bgEnd' };
 let overlayColors = false;
 
+// Colors the interface (play bar, sliders, checkboxes) is drawn in: white when overlay colors are off,
+// otherwise the live main/gradient colors, or the last hand-picked ones while locked.
+function uiColors() {
+  if (!overlayColors) return ['#ffffff', '#ffffff'];
+  const a = lockOverlay ? uiMain : visualColor;
+  return [a, useGradient ? (lockOverlay ? uiEnd : gradientColor) : a];
+}
+
 const rangeEls = Array.from(document.querySelectorAll('input[type=range]'));
 function updateSliders() {
   for (const slider of rangeEls) {
@@ -50,9 +60,8 @@ function updateSliders() {
     const val = parseFloat(slider.value) || 0;
     const percent = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
 
-    const c1 = visualColor;
-    const c2 = useGradient ? gradientColor : visualColor;
-    const activeGrad = overlayColors ? `linear-gradient(90deg, ${c1}, ${c2})` : 'linear-gradient(90deg, #fff, #fff)';
+    const [c1, c2] = uiColors();
+    const activeGrad = `linear-gradient(90deg, ${c1}, ${c2})`;
 
     slider.style.backgroundImage = `linear-gradient(90deg, #444, #444), ${activeGrad}`;
     slider.style.backgroundSize = `calc((100% - 14px) * ${1 - percent / 100} + 7px) 100%, 100% 100%`;
@@ -63,9 +72,9 @@ function updateSliders() {
 
 function updateOverlayTheme() {
   overlayColors = $('overlayColors').checked;
+  $('lockOverlay').disabled = !overlayColors;   // while the interface is plain white there is nothing to lock
   const root = document.documentElement;
-  const a = overlayColors ? visualColor : '#ffffff';
-  const b = overlayColors ? (useGradient ? gradientColor : visualColor) : '#ffffff';
+  const [a, b] = uiColors();
 
   root.style.setProperty('--overlay-accent', a);
   root.style.setProperty('--accent', a);
@@ -78,6 +87,7 @@ function updateOverlayTheme() {
   updateSliders();
 }
 $('overlayColors').onchange = updateOverlayTheme;
+$('lockOverlay').onchange = e => { lockOverlay = e.target.checked; updateOverlayTheme(); };
 const vals = new Float32Array(N);
 
 const stars = Array.from({ length: 600 }, () => ({
@@ -123,7 +133,7 @@ function startAt(off) {
   stopAll();
   src = ctx.createBufferSource(); src.buffer = buf; src.connect(outGain);
   if (recDest) src.connect(recDest);   // keep the recording's audio alive across seeks/resumes
-  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); stopRecording('Song ended. Video saved.'); } };
+  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); parts.length = 0; stopRecording('Song ended. Video saved.'); } };
   src.start(0, off);
   asrc = null;
   if (off + LEAD < buf.duration) { asrc = ctx.createBufferSource(); asrc.buffer = buf; asrc.connect(analyser); asrc.start(0, off + LEAD); }
@@ -142,7 +152,7 @@ $('song').onchange = async e => {
     buf = await ctx.decodeAudioData(await f.arrayBuffer());
     $('title').value = f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
     stopAll();
-    playing = false; icon(false); vals.fill(0);
+    playing = false; icon(false); vals.fill(0); parts.length = 0;
     offset = 0; $('play').disabled = false; $('seek').disabled = false;
     $('status').textContent = 'Ready. Press Play or Spacebar.';
     if ($('presetRandomize').checked) randomizeSettings();
@@ -152,10 +162,14 @@ $('song').onchange = async e => {
 $('backgroundImage').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; }; im.src = r.result; };
+  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; syncBgImageUI(); }; im.src = r.result; };
   r.readAsDataURL(f);
 };
-$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; };
+$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; syncBgImageUI(); };
+function syncBgImageUI() {   // an image covers the color/gradient, so those controls are dimmed (not disabled)
+  $('bgColorOpts').classList.toggle('off', !!backgroundImg);
+  $('bgImageHint').hidden = !backgroundImg;
+}
 
 $('cover').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
@@ -206,11 +220,11 @@ function hexToHsv(hex) {
   return { h: (h + 360) % 360, s: max === 0 ? 0 : d / max, v: max };
 }
 
-function updatePicker(which) {
+function updatePicker(which, auto = false) {   // auto = true when the color cycler moves it, not the user
   const st = pickerState[which], hex = st.hex || hsvToHex(st.h, st.s, st.v);
   const prefix = PREFIX[which];
-  if (which === 'main') visualColor = hex;
-  else if (which === 'end') gradientColor = hex;
+  if (which === 'main') { visualColor = hex; if (!auto) uiMain = hex; }
+  else if (which === 'end') { gradientColor = hex; if (!auto) uiEnd = hex; }
   else if (which === 'bg') backgroundColor = hex;
   else backgroundEndColor = hex;
   const knob = $(prefix + 'HueKnob');
@@ -230,6 +244,7 @@ function updatePicker(which) {
   if (swatch) swatch.style.background = hex;
   if (which === 'bg' || which === 'bgEnd') updateDial();
   syncFields(prefix, hex);
+  if (auto && lockOverlay) return;   // the interface isn't following the cycler, so skip the restyle
   updateOverlayTheme();
   updateSliders();
 }
@@ -398,7 +413,8 @@ $('muteBtn').onclick = e => { muted = !muted; applyVol(); if (e.detail) $('muteB
 applyVol();
 $('bassPulse').onchange = e => { bassPulse = e.target.checked; $('pulseAmt').disabled = !bassPulse; updateSliders(); };
 $('pulseAmt').oninput = e => { pulseAmt = +e.target.value; updateSliders(); };
-$('bgAudioReactive').onchange = e => { bgAudioReactive = e.target.checked; };
+$('bgAudioReactive').onchange = e => { bgAudioReactive = e.target.checked; $('bgPulseAmt').disabled = !bgAudioReactive; updateSliders(); };
+$('bgPulseAmt').oninput = e => { bgPulseAmt = +e.target.value; updateSliders(); };
 
 // Stars + particles
 const partCfg = { on: true, count: 40, size: 3, speed: 1 };
@@ -421,6 +437,56 @@ $('partSize').oninput = e => { partCfg.size = +e.target.value; updateSliders(); 
 $('partSpeed').oninput = e => { partCfg.speed = +e.target.value; updateSliders(); };
 const updateStarDial = makeDial({ dial: $('starDial'), input: $('starAngleIn'), get: () => starCfg.angle, set: a => { starCfg.angle = a; } });
 syncStarUI(); updateSliders();
+
+// --- Number readouts: every settings slider also shows (and accepts) a real value with a unit ---
+// scale converts the slider's internal value to what is shown (e.g. 0.08 -> 8 %). The tip explains what the number means.
+const SLIDER_INFO = {
+  sens:        { scale: 100, unit: '%',     tip: 'Bar height gain. 100% matches the original reference look. 50% = bars half as tall; above 100% the loudest bars start to clip at the top.' },
+  circRadius:  { unit: 'px',     tip: 'Radius of the inner ring, in pixels of the 1920x1080 frame.' },
+  circLength:  { unit: 'px',     tip: 'Longest a bar can grow outward from the ring, in pixels (limited by the frame edge).' },
+  circWidth:   { unit: 'px',     tip: 'Thickness of each bar, in pixels.' },
+  circCount:   { unit: 'bars',   tip: 'Number of bars around the ring.' },
+  cycleSpeed:  { unit: '°/s',    tip: 'Hue shift per second. 15°/s is one full trip around the color wheel every 24 seconds; 360°/s is one per second.' },
+  rbSpeed:     { unit: '°/s',    tip: 'How fast the rainbow slides, in degrees of hue per second. 360°/s = one full rainbow cycle per second.' },
+  pulseAmt:    { scale: 100, unit: '%', tip: 'How much the cover grows at full bass. 8% = up to 8% larger on the loudest kick.' },
+  bgPulseAmt:  { scale: 100, unit: '%', tip: 'How strongly the background lights up on bass. 15% = at full bass, 15% of your main color is added on top of the background.' },
+  starDensity: { unit: 'stars',  tip: 'Number of stars on screen.' },
+  starSpeed:   { unit: '×',      tip: 'Drift speed multiplier. 1× is the default pace; 0 freezes the stars.' },
+  starBoost:   { unit: '×',      tip: 'Extra speed at full bass. At 8×, stars fly 9 times faster on the loudest kick than at rest.' },
+  starLight:   { scale: 100, unit: '%', tip: 'How bright and large stars flash on a beat. 100% is the default; 0% turns the flash off.' },
+  partCount:   { unit: '/beat',  tip: 'Particles released on each detected beat.' },
+  partSize:    { unit: 'px',     tip: 'Average particle radius, in pixels.' },
+  partSpeed:   { unit: '×',      tip: 'Particle speed multiplier. 1× is the default.' }
+};
+function initReadouts() {
+  const decimals = x => { const t = String(+x.toFixed(4)), i = t.indexOf('.'); return i < 0 ? 0 : t.length - i - 1; };
+  for (const [id, info] of Object.entries(SLIDER_INFO)) {
+    const range = $(id), label = range && range.closest('label');
+    if (!range || !label) continue;
+    const scale = info.scale || 1, dec = Math.min(2, decimals(parseFloat(range.step) * scale));
+    const min = parseFloat(range.min), max = parseFloat(range.max);
+    const name = Array.from(label.childNodes).find(n => n.nodeType === 3 && n.textContent.trim()).textContent.trim();
+    const wrap = document.createElement('span'); wrap.className = 'val';
+    const num = document.createElement('input'); num.type = 'number'; num.className = 'num-in';
+    num.min = +(min * scale).toFixed(4); num.max = +(max * scale).toFixed(4); num.step = +(parseFloat(range.step) * scale).toFixed(4);
+    num.setAttribute('aria-label', `${name} in ${info.unit}`);
+    const unit = document.createElement('span'); unit.className = 'unit'; unit.textContent = info.unit;
+    wrap.append(num, unit); label.append(wrap);
+    label.title = info.tip;
+    const show = () => { if (document.activeElement !== num) num.value = (+range.value * scale).toFixed(dec); };
+    range.addEventListener('input', show);                                  // slider, presets and imports all end up here
+    num.addEventListener('input', () => {                                   // typed number -> slider (clamped), then the slider's normal handler runs
+      const v = parseFloat(num.value); if (!isFinite(v)) return;
+      range.value = Math.min(max, Math.max(min, v / scale));
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    num.addEventListener('blur', () => { num.value = (+range.value * scale).toFixed(dec); });
+    num.addEventListener('keydown', e => { if (e.key === 'Enter') num.blur(); });
+    new MutationObserver(() => { num.disabled = range.disabled; }).observe(range, { attributes: true, attributeFilter: ['disabled'] });
+    num.disabled = range.disabled; show();
+  }
+}
+initReadouts();
 
 // Messages: toast near the bottom of the screen (always visible) + the status line
 let toastT;
@@ -537,13 +603,16 @@ function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
   if (beatNow) { beatNow = false; spawnBurst(); }
+  // Stars and particles stand still while a loaded song is paused or stopped (so a recording resumes exactly where it left off).
+  // With no song loaded yet they keep drifting, so the star settings can still be previewed.
+  const mdt = (playing || !buf) ? dt : 0;
 
   if (autoColorCycle && playing) {
     const d = dt * cycleSpeed;
     pickerState.main.h = (pickerState.main.h + d) % 360; pickerState.main.hex = null;
     pickerState.end.h = (pickerState.end.h + d) % 360; pickerState.end.hex = null;
-    updatePicker('main');
-    if (useGradient) updatePicker('end');
+    updatePicker('main', true);
+    if (useGradient) updatePicker('end', true);
   }
   if (rainbow && rbMove && playing) rbOffset = (((rbOffset - rbDir * rbSpeed * dt) % 360) + 360) % 360;
 
@@ -552,10 +621,6 @@ function frame() {
     const scale = Math.max(1920 / backgroundImg.width, 1080 / backgroundImg.height);
     const w = backgroundImg.width * scale, h = backgroundImg.height * scale;
     g.drawImage(backgroundImg, (1920 - w) / 2, (1080 - h) / 2, w, h);
-    if (bgAudioReactive && bass > 0.1) {
-      g.fillStyle = `rgba(0,0,0,${bass * 0.3})`;
-      g.fillRect(0, 0, 1920, 1080);
-    }
   } else if (useBgGradient) {
     const W = 1920, H = 1080;
     const rad = bgAngle * Math.PI / 180;
@@ -570,7 +635,15 @@ function frame() {
     g.fillStyle = backgroundColor;
     g.fillRect(0, 0, 1920, 1080);
   }
-  drawStars(bass, dt);
+  if (bgAudioReactive && bgPulseAmt > 0 && bass > 0.01) {   // add a wash of the main color on top of whatever background is shown
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = Math.min(1, bass * bgPulseAmt);
+    g.fillStyle = rainbow ? `hsl(${rbOffset} 100% 50%)` : visualColor;
+    g.fillRect(0, 0, 1920, 1080);
+    g.restore();
+  }
+  drawStars(bass, mdt);
 
   const c1 = visualColor, c2 = useGradient ? gradientColor : visualColor;
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -628,12 +701,12 @@ function frame() {
     }
   }
 
-  drawParticles(dt);
+  drawParticles(mdt);
 
   // Cover artwork: bottom-left normally, centred inside the ring in circular mode
   const circ = vizMode === 'circular';
   const pulseScale = bassPulse ? (1 + bass * pulseAmt) : 1;
-  const cs = (circ ? Math.round(circRadius * 1.25) : 192) * pulseScale;
+  const cs = (circ ? Math.round(circRadius * 0.95) : 192) * pulseScale;   // circular: a bit under the ring's radius, so the square sits well inside the bars
   const ccx = circ ? CIRC_CX : 271, ccy = circ ? CIRC_CY : 689;
   const cx = ccx - cs / 2, cy = ccy - cs / 2;
   const coverGradient = g.createLinearGradient(cx, cy, cx + cs, cy + cs);
@@ -755,7 +828,7 @@ function getSettings(withText) {
     useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
     cycleSpeed, rainbow: { on: rainbow, move: rbMove, dir: rbDir, speed: rbSpeed },
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym },
-    bassPulse, pulseAmt, bgReactive: bgAudioReactive, sens,
+    bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
     stars: { ...starCfg }, particles: { ...partCfg }
   };
 }
@@ -763,7 +836,7 @@ function applySettings(p) {
   ['artist', 'title', 'extra'].forEach(k => { if (typeof p[k] === 'string') $(k).value = p[k]; });
   setPickerHex('main', p.main); setPickerHex('end', p.end); setPickerHex('bg', p.bg); setPickerHex('bgEnd', p.bgEnd);
   setCtl('gradient', p.useGrad); setCtl('bgGradient', p.useBgGrad);
-  setCtl('overlayColors', p.overlay); setCtl('autoColorCycle', p.autoCycle);
+  setCtl('overlayColors', p.overlay); setCtl('lockOverlay', p.lockOverlay); setCtl('autoColorCycle', p.autoCycle);
   if (typeof p.bgAngle === 'number') { bgAngle = wrapDeg(p.bgAngle); updateDial(); }
   setCtl('cycleSpeed', p.cycleSpeed);
   const rb = p.rainbow;
@@ -771,7 +844,7 @@ function applySettings(p) {
   if (p.mode) setMode(p.mode);
   const c = p.circ || {};
   setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count); setCtl('circSym', c.sym);
-  setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('sens', p.sens);
+  setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('bgPulseAmt', p.bgPulse); setCtl('sens', p.sens);
   const st = p.stars;
   if (st) {
     setCtl('starsOn', st.on); setCtl('starDensity', st.count); setCtl('starSpeed', st.speed);
