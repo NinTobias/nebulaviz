@@ -112,12 +112,15 @@
           </div>
           <div class="settings-row dir-row" id="bgDirRow" hidden>
             <span class="seglabel">Direction</span>
-            <div class="dir-dial" id="bgDial" role="slider" tabindex="0" aria-label="Background gradient angle"
-              aria-valuemin="0" aria-valuemax="359" aria-valuenow="180"
-              title="Drag to set the angle. Shift = 15° steps, Alt = no snapping"><span class="dial-line"></span></div>
-            <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
-                  id="bgAngleIn" min="0" max="360" step="1" value="180"
-                  aria-label="Gradient angle in degrees">°</span></label>
+            <div class="dir-body">
+              <div class="dir-dial" id="bgDial" role="slider" tabindex="0" aria-label="Background gradient angle"
+                aria-valuemin="0" aria-valuemax="359" aria-valuenow="180"
+                title="Drag to set the angle. Shift = 15° steps, Alt = no snapping"><span class="dial-line"></span>
+              </div>
+              <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
+                    id="bgAngleIn" min="0" max="360" step="1" value="180"
+                    aria-label="Gradient angle in degrees">°</span></label>
+            </div>
           </div>
         </div>
       </details>
@@ -148,13 +151,15 @@
             </div>
             <div class="settings-row dir-row">
               <span class="seglabel">Direction</span>
-              <div class="dir-dial arrow" id="starDial" role="slider" tabindex="0" aria-label="Star direction angle"
-                aria-valuemin="0" aria-valuemax="359" aria-valuenow="270"
-                title="Drag to set the direction the stars fly. Shift = 15° steps, Alt = no snapping"><span
-                  class="dial-line"></span></div>
-              <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
-                    id="starAngleIn" min="0" max="360" step="1" value="270"
-                    aria-label="Star direction angle in degrees">°</span></label>
+              <div class="dir-body">
+                <div class="dir-dial arrow" id="starDial" role="slider" tabindex="0" aria-label="Star direction angle"
+                  aria-valuemin="0" aria-valuemax="359" aria-valuenow="270"
+                  title="Drag to set the direction the stars fly. Shift = 15° steps, Alt = no snapping"><span
+                    class="dial-line"></span></div>
+                <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
+                      id="starAngleIn" min="0" max="360" step="1" value="270"
+                      aria-label="Star direction angle in degrees">°</span></label>
+              </div>
             </div>
           </div>
         </div>
