@@ -2,185 +2,284 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Nebula Visualizer</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800&display=swap">
-  <link rel="stylesheet" href="style.css">
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>Nebula Visualizer Studio</title>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800&display=swap">
+	<link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-  <main>
-    <div class="stage" id="stage">
-      <canvas id="c" width="1920" height="1080"></canvas>
-      <div class="vbtns">
-        <button class="vbtn" id="barToggle" type="button" aria-pressed="true" aria-label="Hide play bar"
-          title="Hide play bar"></button>
-        <button class="vbtn" id="fsBtn" type="button" aria-label="Full screen" title="Full screen"></button>
-      </div>
-      <div class="seekrow">
-        <button id="play" class="round" disabled aria-label="Play"></button>
-        <span id="time">0:00.0 / 0:00.0</span>
-        <input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled aria-label="Song position">
-      </div>
-    </div>
-    <div class="bar">
-      <label>Artist<input type="text" id="artist" value="Artist" placeholder="Artist"></label>
-      <label>Song title<input type="text" id="title" value="Song Title" placeholder="Song title"></label>
-      <label>Extra info<input type="text" id="extra" value="" placeholder="(Feat. other), (VIP Mix), ..."></label>
-	</div>
-	<div class="choose-bar">
-		<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
-		<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
-		<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
-	</div>
-    <div class="groups">
-      <details class="group" open>
-        <summary>Colors</summary>
-        <div class="group-body">
-          <div class="settings-row">
-            <label class="toggle"><input type="checkbox" id="gradient"> Gradient</label>
-            <label class="toggle"><input type="checkbox" id="overlayColors"> Overlay colors</label>
-          </div>
-          <div class="color-tools">
-            <div class="palette-control">
-              <div class="palette-heading"><span class="swatch" id="colorSwatch"></span> Main color</div>
-              <div class="hue-wheel" id="colorWheel" role="group" aria-label="Main color picker">
-                <span class="hue-knob" id="colorHueKnob"></span>
-                <div class="sv-square" id="colorSV" style="--hue:#ff0000"><span class="sv-knob" id="colorSVKnob"></span>
-                </div>
-              </div>
-              <div class="rgb-row">
-                <input type="text" class="hex-in" id="colorHexIn" maxlength="7" spellcheck="false"
-                  aria-label="Main color hex">
-                <input type="number" id="colorR" min="0" max="255" aria-label="Main color red">
-                <input type="number" id="colorG" min="0" max="255" aria-label="Main color green">
-                <input type="number" id="colorB" min="0" max="255" aria-label="Main color blue">
-              </div>
-            </div>
-            <div class="palette-control" id="endColorWrap" hidden>
-              <div class="palette-heading"><span class="swatch" id="endSwatch"></span> Gradient end</div>
-              <div class="hue-wheel" id="endWheel" role="group" aria-label="Gradient end color picker">
-                <span class="hue-knob" id="endHueKnob"></span>
-                <div class="sv-square" id="endSV" style="--hue:#ff0000"><span class="sv-knob" id="endSVKnob"></span>
-                </div>
-              </div>
-              <div class="rgb-row">
-                <input type="text" class="hex-in" id="endHexIn" maxlength="7" spellcheck="false"
-                  aria-label="Gradient end hex">
-                <input type="number" id="endR" min="0" max="255" aria-label="Gradient end red">
-                <input type="number" id="endG" min="0" max="255" aria-label="Gradient end green">
-                <input type="number" id="endB" min="0" max="255" aria-label="Gradient end blue">
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
-      <details class="group">
-        <summary>Background</summary>
-        <div class="group-body">
-          <div class="settings-row">
-            <label class="toggle"><input type="checkbox" id="bgGradient"> Gradient</label>
-          </div>
-          <div class="choose-bar">
-            <label class="btn">
-              Choose background image
-              <input type="file" id="backgroundImage" accept="image/*">
-            </label>
-            <button class="btn" id="removeBackgroundImage" type="button">
-              Remove image
-            </button>
-          </div>
-          <div class="color-tools">
-            <div class="palette-control">
-              <div class="palette-heading"><span class="swatch" id="bgSwatch"></span> Background color</div>
-              <div class="hue-wheel" id="bgWheel" role="group" aria-label="Background color picker">
-                <span class="hue-knob" id="bgHueKnob"></span>
-                <div class="sv-square" id="bgSV" style="--hue:#ff0000"><span class="sv-knob" id="bgSVKnob"></span></div>
-              </div>
-              <div class="rgb-row">
-                <input type="text" class="hex-in" id="bgHexIn" maxlength="7" spellcheck="false"
-                  aria-label="Background color hex">
-                <input type="number" id="bgR" min="0" max="255" aria-label="Background red">
-                <input type="number" id="bgG" min="0" max="255" aria-label="Background green">
-                <input type="number" id="bgB" min="0" max="255" aria-label="Background blue">
-              </div>
-            </div>
-            <div class="palette-control" id="bgEndWrap" hidden>
-              <div class="palette-heading"><span class="swatch" id="bgEndSwatch"></span> Gradient end</div>
-              <div class="hue-wheel" id="bgEndWheel" role="group" aria-label="Background gradient end color picker">
-                <span class="hue-knob" id="bgEndHueKnob"></span>
-                <div class="sv-square" id="bgEndSV" style="--hue:#ff0000"><span class="sv-knob" id="bgEndSVKnob"></span>
-                </div>
-              </div>
-              <div class="rgb-row">
-                <input type="text" class="hex-in" id="bgEndHexIn" maxlength="7" spellcheck="false"
-                  aria-label="Background gradient end hex">
-                <input type="number" id="bgEndR" min="0" max="255" aria-label="Background gradient end red">
-                <input type="number" id="bgEndG" min="0" max="255" aria-label="Background gradient end green">
-                <input type="number" id="bgEndB" min="0" max="255" aria-label="Background gradient end blue">
-              </div>
-            </div>
-          </div>
-          <div class="settings-row dir-row" id="bgDirRow" hidden>
-            <span class="seglabel">Direction</span>
-            <div class="dir-body">
-              <div class="dir-dial" id="bgDial" role="slider" tabindex="0" aria-label="Background gradient angle"
-                aria-valuemin="0" aria-valuemax="359" aria-valuenow="180"
-                title="Drag to set the angle. Shift = 15° steps, Alt = no snapping"><span class="dial-line"></span>
-              </div>
-              <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
-                    id="bgAngleIn" min="0" max="360" step="1" value="180"
-                    aria-label="Gradient angle in degrees">°</span></label>
-            </div>
-          </div>
-        </div>
-      </details>
-      <details class="group" open>
-        <summary>Sound</summary>
-        <div class="group-body">
-          <div class="slider-col">
-            <label class="sens">Sensitivity<input type="range" id="sens" min="0.4" max="1.6" step="0.05"
-                value="1"></label>
-          </div>
-        </div>
-      </details>
-      <details class="group">
-        <summary>Stars</summary>
-        <div class="group-body">
-          <div class="settings-row">
-            <label class="toggle"><input type="checkbox" id="starsOn" checked> Show stars</label>
-          </div>
-          <div id="starOpts">
-            <div class="slider-col">
-              <label class="sens">Density<input type="range" id="starDensity" min="20" max="600" step="10"
-                  value="240"></label>
-              <label class="sens">Speed<input type="range" id="starSpeed" min="0" max="3" step="0.05" value="1"></label>
-              <label class="sens">Boost<input type="range" id="starBoost" min="0" max="30" step="0.5" value="8"></label>
-              <label class="toggle"><input type="checkbox" id="starFlash" checked> Light up on beat</label>
-              <label class="sens">Intensity<input type="range" id="starLight" min="0" max="3" step="0.05"
-                  value="1"></label>
-            </div>
-            <div class="settings-row dir-row">
-              <span class="seglabel">Direction</span>
-              <div class="dir-body">
-                <div class="dir-dial arrow" id="starDial" role="slider" tabindex="0" aria-label="Star direction angle"
-                  aria-valuemin="0" aria-valuemax="359" aria-valuenow="270"
-                  title="Drag to set the direction the stars fly. Shift = 15° steps, Alt = no snapping"><span
-                    class="dial-line"></span></div>
-                <label class="angle-field">Angle<span class="angle-wrap"><input type="number" class="angle-in"
-                      id="starAngleIn" min="0" max="360" step="1" value="270"
-                      aria-label="Star direction angle in degrees">°</span></label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
-    </div>
-    <div id="status">Choose a song to begin. The bars react to the audio.</div>
-  </main>
+	<main>
+		<div class="stage" id="stage">
+			<canvas id="c" width="1920" height="1080"></canvas>
+			<div class="vbtns">
+				<button class="vbtn" id="barToggle" type="button" aria-pressed="true" aria-label="Hide play bar"
+					title="Hide play bar"></button>
+				<button class="vbtn" id="fsBtn" type="button" aria-label="Full screen" title="Full screen"></button>
+			</div>
+			<div class="seekrow">
+				<button id="play" class="round" disabled aria-label="Play"></button>
+				<span id="time">0:00.0 / 0:00.0</span>
+				<input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled aria-label="Song position">
+				<button class="vbtn" id="snapshotBtn" type="button" aria-label="Save screenshot"
+					title="Save screenshot (PNG)">
+					<svg viewBox="0 0 24 24">
+						<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+						<circle cx="12" cy="13" r="4" />
+					</svg>
+				</button>
+				<button class="vbtn" id="recBtn" type="button" aria-label="Export Video (WebM/MP4)"
+					title="Export Video (WebM/MP4)">
+					<svg viewBox="0 0 24 24">
+						<polygon points="23 7 16 12 23 17 23 7" />
+						<rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+					</svg>
+				</button>
+			</div>
+		</div>
+		<div class="bar">
+			<label>Artist<input type="text" id="artist" value="Artist" placeholder="Artist"></label>
+			<label>Song title<input type="text" id="title" value="Song Title" placeholder="Song title"></label>
+			<label>Extra info<input type="text" id="extra" value="" placeholder="(Feat. other), (VIP Mix), ..."></label>
+		</div>
+		<div class="choose-bar">
+			<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
+			<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
+			<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
+		</div>
+		<div class="groups">
+			<details class="group" open>
+				<summary>Visualizer Mode & Layout</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle">Visualizer Mode
+							<select id="vizMode" class="btn">
+								<option value="bars">63-Bar Spectrum</option>
+								<option value="circular">Circular Spectrum</option>
+								<option value="mirrored">Mirrored Spectrum</option>
+							</select>
+						</label>
+						<label class="toggle"><input type="checkbox" id="presetRandomize"> Randomize on load</label>
+					</div>
+					<div class="settings-row" id="circularOpts" hidden>
+						<div class="slider-col" style="width:100%;">
+							<label class="sens">Radius<input type="range" id="circRadius" min="100" max="320" step="5"
+									value="200"></label>
+							<label class="sens">Bar length<input type="range" id="circLength" min="40" max="300"
+									step="5" value="190"></label>
+							<label class="sens">Bar width<input type="range" id="circWidth" min="1" max="16" step="0.5"
+									value="5"></label>
+							<label class="sens">Bar count<input type="range" id="circCount" min="32" max="160" step="1"
+									value="90"></label>
+						</div>
+					</div>
+				</div>
+			</details>
+			<details class="group" open>
+				<summary>Colors</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle"><input type="checkbox" id="gradient"> Gradient</label>
+						<label class="toggle"><input type="checkbox" id="overlayColors"> Overlay colors</label>
+						<label class="toggle"><input type="checkbox" id="autoColorCycle"> Auto Color Cycling</label>
+					</div>
+					<div class="color-tools">
+						<div class="palette-control">
+							<div class="palette-heading"><span class="swatch" id="colorSwatch"></span> Main color</div>
+							<div class="hue-wheel" id="colorWheel" role="group" aria-label="Main color picker">
+								<span class="hue-knob" id="colorHueKnob"></span>
+								<div class="sv-square" id="colorSV" style="--hue:#ff0000"><span class="sv-knob"
+										id="colorSVKnob"></span>
+								</div>
+							</div>
+							<div class="rgb-row">
+								<input type="text" class="hex-in" id="colorHexIn" maxlength="7" spellcheck="false"
+									aria-label="Main color hex">
+								<input type="number" id="colorR" min="0" max="255" aria-label="Main color red">
+								<input type="number" id="colorG" min="0" max="255" aria-label="Main color green">
+								<input type="number" id="colorB" min="0" max="255" aria-label="Main color blue">
+							</div>
+						</div>
+						<div class="palette-control" id="endColorWrap" hidden>
+							<div class="palette-heading"><span class="swatch" id="endSwatch"></span> Gradient end</div>
+							<div class="hue-wheel" id="endWheel" role="group" aria-label="Gradient end color picker">
+								<span class="hue-knob" id="endHueKnob"></span>
+								<div class="sv-square" id="endSV" style="--hue:#ff0000"><span class="sv-knob"
+										id="endSVKnob"></span>
+								</div>
+							</div>
+							<div class="rgb-row">
+								<input type="text" class="hex-in" id="endHexIn" maxlength="7" spellcheck="false"
+									aria-label="Gradient end hex">
+								<input type="number" id="endR" min="0" max="255" aria-label="Gradient end red">
+								<input type="number" id="endG" min="0" max="255" aria-label="Gradient end green">
+								<input type="number" id="endB" min="0" max="255" aria-label="Gradient end blue">
+							</div>
+						</div>
+					</div>
+				</div>
+			</details>
+			<details class="group">
+				<summary>Background</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle"><input type="checkbox" id="bgGradient"> Gradient</label>
+						<label class="toggle"><input type="checkbox" id="bgAudioReactive"> Audio-Reactive
+							Intensity</label>
+					</div>
+					<div class="choose-bar">
+						<label class="btn">
+							Choose background image
+							<input type="file" id="backgroundImage" accept="image/*">
+						</label>
+						<button class="btn" id="removeBackgroundImage" type="button">
+							Remove image
+						</button>
+					</div>
+					<div class="color-tools">
+						<div class="palette-control">
+							<div class="palette-heading"><span class="swatch" id="bgSwatch"></span> Background color
+							</div>
+							<div class="hue-wheel" id="bgWheel" role="group" aria-label="Background color picker">
+								<span class="hue-knob" id="bgHueKnob"></span>
+								<div class="sv-square" id="bgSV" style="--hue:#ff0000"><span class="sv-knob"
+										id="bgSVKnob"></span></div>
+							</div>
+							<div class="rgb-row">
+								<input type="text" class="hex-in" id="bgHexIn" maxlength="7" spellcheck="false"
+									aria-label="Background color hex">
+								<input type="number" id="bgR" min="0" max="255" aria-label="Background red">
+								<input type="number" id="bgG" min="0" max="255" aria-label="Background green">
+								<input type="number" id="bgB" min="0" max="255" aria-label="Background blue">
+							</div>
+						</div>
+						<div class="palette-control" id="bgEndWrap" hidden>
+							<div class="palette-heading"><span class="swatch" id="bgEndSwatch"></span> Gradient end
+							</div>
+							<div class="hue-wheel" id="bgEndWheel" role="group"
+								aria-label="Background gradient end color picker">
+								<span class="hue-knob" id="bgEndHueKnob"></span>
+								<div class="sv-square" id="bgEndSV" style="--hue:#ff0000"><span class="sv-knob"
+										id="bgEndSVKnob"></span>
+								</div>
+							</div>
+							<div class="rgb-row">
+								<input type="text" class="hex-in" id="bgEndHexIn" maxlength="7" spellcheck="false"
+									aria-label="Background gradient end hex">
+								<input type="number" id="bgEndR" min="0" max="255"
+									aria-label="Background gradient end red">
+								<input type="number" id="bgEndG" min="0" max="255"
+									aria-label="Background gradient end green">
+								<input type="number" id="bgEndB" min="0" max="255"
+									aria-label="Background gradient end blue">
+							</div>
+						</div>
+					</div>
+					<div class="settings-row dir-row" id="bgDirRow" hidden>
+						<span class="seglabel">Direction</span>
+						<div class="dir-body">
+							<div class="dir-dial" id="bgDial" role="slider" tabindex="0"
+								aria-label="Background gradient angle" aria-valuemin="0" aria-valuemax="359"
+								aria-valuenow="180" title="Drag to set the angle. Shift = 15° steps, Alt = no snapping">
+								<span class="dial-line"></span>
+							</div>
+							<label class="angle-field">Angle<span class="angle-wrap"><input type="number"
+										class="angle-in" id="bgAngleIn" min="0" max="360" step="1" value="180"
+										aria-label="Gradient angle in degrees">°</span></label>
+						</div>
+					</div>
+				</div>
+			</details>
+			<details class="group" open>
+				<summary>Sound & Reactivity</summary>
+				<div class="group-body">
+					<div class="slider-col">
+						<label class="sens">Sensitivity<input type="range" id="sens" min="0.4" max="1.6" step="0.05"
+								value="1"></label>
+						<label class="toggle"><input type="checkbox" id="bassPulse" checked> Pulse cover artwork to
+							bass</label>
+						<label class="sens">Cover pulse<input type="range" id="pulseAmt" min="0" max="0.4" step="0.01"
+								value="0.08"></label>
+					</div>
+				</div>
+			</details>
+			<details class="group">
+				<summary>Stars & Particles</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle"><input type="checkbox" id="starsOn" checked> Show stars</label>
+					</div>
+					<div id="starOpts">
+						<div class="slider-col">
+							<label class="sens">Density<input type="range" id="starDensity" min="20" max="600" step="10"
+									value="240"></label>
+							<label class="sens">Speed<input type="range" id="starSpeed" min="0" max="3" step="0.05"
+									value="1"></label>
+							<label class="sens">Boost<input type="range" id="starBoost" min="0" max="30" step="0.5"
+									value="8"></label>
+							<label class="toggle"><input type="checkbox" id="starFlash" checked> Light up on
+								beat</label>
+							<label class="sens">Intensity<input type="range" id="starLight" min="0" max="3" step="0.05"
+									value="1"></label>
+						</div>
+					</div>
+					<div class="settings-row" style="margin-top:24px">
+						<label class="toggle"><input type="checkbox" id="partOn" checked> Particle bursts on
+							beat</label>
+					</div>
+					<div id="partOpts">
+						<div class="slider-col">
+							<label class="sens">Amount<input type="range" id="partCount" min="5" max="150" step="1"
+									value="40"></label>
+							<label class="sens">Size<input type="range" id="partSize" min="1" max="8" step="0.5"
+									value="3"></label>
+							<label class="sens">Speed<input type="range" id="partSpeed" min="0.3" max="3" step="0.1"
+									value="1"></label>
+						</div>
+					</div>
+					<div class="settings-row dir-row">
+						<span class="seglabel">Direction</span>
+						<div class="dir-body">
+							<div class="dir-dial arrow" id="starDial" role="slider" tabindex="0"
+								aria-label="Star and particle direction angle" aria-valuemin="0" aria-valuemax="359"
+								aria-valuenow="270"
+								title="Drag to set the direction stars fly and particles drift. Shift = 15° steps, Alt = no snapping">
+								<span class="dial-line"></span>
+							</div>
+							<label class="angle-field">Angle<span class="angle-wrap"><input type="number"
+										class="angle-in" id="starAngleIn" min="0" max="360" step="1" value="270"
+										aria-label="Direction angle in degrees">°</span></label>
+						</div>
+					</div>
+				</div>
+			</details>
+			<details class="group">
+				<summary>Presets & Project</summary>
+				<div class="group-body">
+					<div class="choose-bar" style="align-items: center;">
+						<label class="btn preset-btn">Load Preset:
+							<select id="presetSelect">
+								<option value="default">Default Nebula</option>
+								<option value="cyberpunk">Cyberpunk Neon</option>
+								<option value="sunset">Sunset Vibes</option>
+								<option value="monochrome">Minimal Mono</option>
+							</select>
+						</label>
+						<button class="btn" id="savePresetBtn" type="button">Save Current as Preset</button>
+						<button class="btn" id="exportJsonBtn" type="button">Export JSON Project</button>
+						<label class="btn">Import JSON<input type="file" id="importJsonFile" accept=".json"></label>
+						<button class="btn" id="randomizeBtn" type="button">🎲 Randomize</button>
+					</div>
+				</div>
+			</details>
+		</div>
+		<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
+	</main>
 
-  <script src="script.js"></script>
+	<div id="toast" role="status" aria-live="polite"></div>
+
+	<script src="script.js"></script>
 </body>
 
 </html>
