@@ -18,6 +18,9 @@ let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
 let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190, mirCount = 63, dotsCount = 63, dotsPeak = true;
 let barShape = 'rect', barRound = 4, barGap = 7, glowBlur = 24, glowBars = 0, glowCover = 0, glowText = 0;
 const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
+const textCfg = { font: 'montserrat', weight: 'default', size: 100, space: 0, align: 'auto', x: 0, y: 0, color: '#ffffff', match: false, shOp: 0, shBlur: 8, shX: 3, shY: 3, shColor: '#000000' };
+const TEXT_FONTS = { montserrat: 'Montserrat, sans-serif', oswald: 'Oswald, sans-serif', bebas: '"Bebas Neue", Impact, sans-serif', playfair: '"Playfair Display", Georgia, serif', orbitron: 'Orbitron, sans-serif', pacifico: 'Pacifico, cursive', arial: 'Arial, Helvetica, sans-serif', georgia: 'Georgia, serif', courier: '"Courier New", Courier, monospace', impact: 'Impact, "Arial Black", sans-serif' };
+const TEXT_WEIGHTS = { default: [700, 400], regular: [400, 400], bold: [700, 700], heavy: [800, 800] };   // [artist, title / extra]
 const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
 const MID = BASE - MAXH / 2;                           // mirrored layout: centre line, same footprint as the normal bars
 let cycleSpeed = 15, rainbow = false, rbMove = true, rbDir = 1, rbSpeed = 60, rbOffset = 0, circSym = true;
@@ -396,6 +399,26 @@ $('barShape').onchange = e => { barShape = e.target.value; syncBarUI(); };
 $('barRound').oninput = e => { barRound = +e.target.value; updateSliders(); };
 $('barGap').oninput = e => { barGap = +e.target.value; updateSliders(); };
 $('glowBlur').oninput = e => { glowBlur = +e.target.value; updateSliders(); };
+
+// Text styling
+function loadTextFont() {   // web fonts are only downloaded once something asks for them; the canvas never asks by itself
+  const f = TEXT_FONTS[textCfg.font];
+  if (document.fonts && f) [400, 700, 800].forEach(w => document.fonts.load(`${w} 40px ${f}`).catch(() => { }));
+}
+function syncTextDisabled() {
+  $('textColor').disabled = textCfg.match;
+  ['textShBlur', 'textShX', 'textShY', 'textShColor'].forEach(id => { $(id).disabled = textCfg.shOp <= 0; });   // nothing to adjust while the shadow is off
+}
+function syncTextUI() { syncTextDisabled(); updateSliders(); }
+$('textFont').onchange = e => { textCfg.font = e.target.value; loadTextFont(); };
+$('textWeight').onchange = e => { textCfg.weight = e.target.value; };
+$('textAlign').onchange = e => { textCfg.align = e.target.value; };
+Object.entries({ textSize: 'size', textSpace: 'space', textX: 'x', textY: 'y', textShOp: 'shOp', textShBlur: 'shBlur', textShX: 'shX', textShY: 'shY' })
+  .forEach(([id, k]) => { $(id).oninput = e => { textCfg[k] = +e.target.value; syncTextUI(); }; });
+$('textColor').oninput = $('textColor').onchange = e => { textCfg.color = e.target.value; };
+$('textShColor').oninput = $('textShColor').onchange = e => { textCfg.shColor = e.target.value; };
+$('textMatch').onchange = e => { textCfg.match = e.target.checked; syncTextUI(); };
+syncTextDisabled();
 $('glowBars').oninput = e => { glowBars = +e.target.value; updateSliders(); };
 $('glowCover').oninput = e => { glowCover = +e.target.value; updateSliders(); };
 $('glowText').oninput = e => { glowText = +e.target.value; updateSliders(); };
@@ -473,6 +496,14 @@ const SLIDER_INFO = {
   glowBlur:    { unit: 'px',     tip: 'How far the glow spreads, in pixels of the 1920x1080 frame. Shared by bars, cover art and text.' },
   glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars (every mode except the Ridgeline). 0% = off.' },
   glowCover:   { scale: 100, unit: '%', tip: 'Glow around the cover artwork. 0% = off.' },
+  textSize:    { unit: '%',      tip: 'Size of the artist, title and extra-info text. 100% is the original size; the lines keep their spacing relative to each other.' },
+  textSpace:   { unit: '%',      tip: 'Extra space between letters, as a percentage of the font size. Negative values squeeze the letters together.' },
+  textX:       { unit: 'px',     tip: 'Moves the text left (negative) or right (positive), in pixels of the 1920x1080 frame.' },
+  textY:       { unit: 'px',     tip: 'Moves the text up (negative) or down (positive), in pixels of the 1920x1080 frame.' },
+  textShOp:    { scale: 100, unit: '%', tip: 'Strength of the drop shadow behind the text. 0% = no shadow.' },
+  textShBlur:  { unit: 'px',     tip: 'How soft the shadow edge is, in pixels. 0 = a sharp copy of the text.' },
+  textShX:     { unit: 'px',     tip: 'Shadow offset to the right (positive) or left (negative), in pixels.' },
+  textShY:     { unit: 'px',     tip: 'Shadow offset downward (positive) or upward (negative), in pixels.' },
   glowText:    { scale: 100, unit: '%', tip: 'Glow behind the artist, title and extra-info text. 0% = off.' },
   partSens:    { scale: 100, unit: '%', tip: 'How easily a bass hit releases particles. Lower it for very bassy songs: only the strongest hits (and fewer of them) will burst. Star flashes are not affected.' },
   mirCount:    { unit: 'bars',   tip: 'Number of bars in the mirrored spectrum. 63 matches the original; more bars look smoother, fewer look chunkier.' },
@@ -647,7 +678,7 @@ function drawParticles(dt) {
 
 function fitText(txt, weight, size, maxW, ls = 0) {
   do {
-    g.font = `${weight} ${size}px Montserrat, sans-serif`;
+    g.font = `${weight} ${size}px ${TEXT_FONTS[textCfg.font] || TEXT_FONTS.montserrat}`;
     if ('letterSpacing' in g) g.letterSpacing = (ls * size) + 'px';
     size -= 2;
   } while (g.measureText(txt).width > maxW && size > 20);
@@ -893,27 +924,32 @@ function frame() {
   }
   g.restore();
 
-  // text: right of the cover normally, centred under the ring in circular mode
-  g.save(); if (glowText > 0) { g.shadowColor = glowCol(Math.min(1, glowText)); g.shadowBlur = glowBlur; }
-  g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
+  // text: styled in the Text group. Right of the cover normally, centred under the ring in circular mode
+  const T = textCfg, ts = T.size / 100;
   const artist = $('artist').value.toUpperCase(), title = $('title').value.toUpperCase(), extra = $('extra').value.trim().toUpperCase();
-  const three = !!extra;
-  if (circ) {
-    g.textAlign = 'center';
-    fitText(artist, 700, three ? 70 : 82, 1500, three ? 0 : -0.01);
-    g.fillText(artist, 960, three ? 925 : 945);
-    fitText(title, 400, three ? 48 : 51, 1500, three ? 0.015 : 0);
-    g.fillText(title, 960, three ? 975 : 1005);
-    if (extra) { fitText(extra, 400, 48, 1500, 0.015); g.fillText(extra, 960, 1025); }
-    g.textAlign = 'left';
-  } else {
-    fitText(artist, 700, three ? 70 : 82, X1 - 403, three ? 0 : -0.01);
-    g.fillText(artist, 403, three ? 666 : 698);
-    fitText(title, 400, three ? 48 : 51, X1 - 403, three ? 0.015 : 0);
-    g.fillText(title, 403, three ? 716 : 753);
-    if (extra) { fitText(extra, 400, 48, X1 - 403, 0.015); g.fillText(extra, 403, 762); }
-  }
-  g.restore();
+  const three = !!extra, wt = TEXT_WEIGHTS[T.weight] || TEXT_WEIGHTS.default;
+  const maxW = circ ? 1500 : X1 - 403;
+  const algn = T.align === 'auto' ? (circ ? 'center' : 'left') : T.align;
+  const ax = (circ ? { left: X0, center: CIRC_CX, right: X1 } : { left: 403, center: (403 + X1) / 2, right: X1 })[algn] + T.x;
+  const yy = circ ? (three ? [925, 975, 1025] : [945, 1005]) : (three ? [666, 716, 762] : [698, 753]);   // baselines of the original layout
+  const lineY = i => yy[0] + (yy[i] - yy[0]) * ts + T.y;                                                  // spacing between lines grows with the size
+  const sp = T.space / 100, shRGB = rgbOf(T.shColor);
+  g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
+  const drawLine = (txt, y) => {
+    let drawn = false;
+    if (T.shOp > 0) {   // drop shadow
+      g.save(); g.shadowColor = `rgba(${shRGB[0]},${shRGB[1]},${shRGB[2]},${T.shOp})`; g.shadowBlur = T.shBlur; g.shadowOffsetX = T.shX; g.shadowOffsetY = T.shY;
+      g.fillText(txt, ax, y); g.restore(); drawn = true;
+    }
+    if (glowText > 0 || !drawn) {   // glow (and the plain text when there is no shadow)
+      g.save(); if (glowText > 0) { g.shadowColor = glowCol(Math.min(1, glowText)); g.shadowBlur = glowBlur; }
+      g.fillText(txt, ax, y); g.restore();
+    }
+  };
+  fitText(artist, wt[0], (three ? 70 : 82) * ts, maxW, (three ? 0 : -0.01) + sp); drawLine(artist, lineY(0));
+  fitText(title, wt[1], (three ? 48 : 51) * ts, maxW, (three ? 0.015 : 0) + sp); drawLine(title, lineY(1));
+  if (extra) { fitText(extra, wt[1], 48 * ts, maxW, 0.015 + sp); drawLine(extra, lineY(2)); }
+  g.textAlign = 'left';
   if ('letterSpacing' in g) g.letterSpacing = '0px';
   if (expCanvas && recActive()) { expCtx.imageSmoothingQuality = 'high'; expCtx.drawImage(cv, 0, 0, expCanvas.width, expCanvas.height); }   // scaled copy for the chosen export resolution
   requestAnimationFrame(frame);
@@ -1014,7 +1050,7 @@ function getSettings(withText) {
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
-    stars: { ...starCfg }, particles: { ...partCfg }
+    stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }
   };
 }
 function applySettings(p) {
@@ -1042,6 +1078,13 @@ function applySettings(p) {
   }
   const q = p.particles;
   if (q) { setCtl('partOn', q.on); setCtl('partCount', q.count); setCtl('partSize', q.size); setCtl('partSpeed', q.speed); setCtl('partSens', q.sens); }
+  const tx = p.text;
+  if (tx) {
+    setCtl('textFont', tx.font); setCtl('textWeight', tx.weight); setCtl('textAlign', tx.align);
+    setCtl('textSize', tx.size); setCtl('textSpace', tx.space); setCtl('textX', tx.x); setCtl('textY', tx.y);
+    setCtl('textColor', tx.color); setCtl('textMatch', tx.match);
+    setCtl('textShOp', tx.shOp); setCtl('textShBlur', tx.shBlur); setCtl('textShX', tx.shX); setCtl('textShY', tx.shY); setCtl('textShColor', tx.shColor);
+  }
   updateOverlayTheme(); updateSliders();
 }
 
@@ -1100,7 +1143,7 @@ Object.assign(PRESETS.chillwave, { bars: { shape: 'capsule' } });
 Object.assign(PRESETS.minimal, { bars: { shape: 'rounded', round: 3 } });
 function applyPreset(key) {
   const p = PRESETS[key]; if (!p) return;
-  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra;   // presets never touch the text
+  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text;   // presets never touch the text or its styling
   const m = { ...base, ...p };
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
