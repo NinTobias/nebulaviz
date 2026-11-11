@@ -16,12 +16,13 @@ let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beat
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
 let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
 let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190, mirCount = 63, dotsCount = 63, dotsPeak = true;
+let barShape = 'rect', barRound = 4, barGap = 7, glowBlur = 24, glowBars = 0, glowCover = 0, glowText = 0;
 const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
 const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
 const MID = BASE - MAXH / 2;                           // mirrored layout: centre line, same footprint as the normal bars
 let cycleSpeed = 15, rainbow = false, rbMove = true, rbDir = 1, rbSpeed = 60, rbOffset = 0, circSym = true;
 let volume = 1, muted = false, outGain = null;
-let mediaRecorder = null, recDest = null, recChunks = [], recNote = '';
+let mediaRecorder = null, recDest = null, recChunks = [], recNote = '', expCanvas = null, expCtx = null;
 let autoColorCycle = false, colorCycleHue = 52;
 let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, bgPulseAmt = 0.15, beatNow = false;
 // Lock overlay color: uiMain/uiEnd hold the colors the user last SET (picker, hex, preset). Auto color cycling doesn't touch them.
@@ -95,9 +96,9 @@ const vals = new Float32Array(N);
 const stars = Array.from({ length: 600 }, () => ({
   x: Math.random() * 1920, y: Math.random() * 1080,
   r: 0.5 + Math.random() * 1.8, k: 0.1 + Math.random() * 0.4,
-  c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6
+  c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6, t: Math.random()   // t: this star's place in the gradient / rainbow
 }));
-const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, angle: 270 };
+const starCfg = { on: true, flash: true, count: 240, speed: 1, boost: 8, light: 1, angle: 270, color: 'white' };
 
 function setup() {
   if (ctx) return;
@@ -380,7 +381,7 @@ updateSliders();
 // --- Visualizer Mode Selectors & Controls ---
 function setMode(m) {
   if (!MODES.includes(m)) m = 'bars';
-  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored'; $('dotsOpts').hidden = m !== 'dots';
+  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored'; $('dotsOpts').hidden = m !== 'dots'; $('barOpts').hidden = !(m === 'bars' || m === 'mirrored');
 }
 $('vizMode').onchange = e => setMode(e.target.value);
 $('circRadius').oninput = e => { circRadius = +e.target.value; updateSliders(); };
@@ -390,6 +391,15 @@ $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
 $('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
 $('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
+function syncBarUI() { $('barRound').disabled = !(barShape === 'rounded' || barShape === 'beveled'); }   // corner size only matters for these two
+$('barShape').onchange = e => { barShape = e.target.value; syncBarUI(); };
+$('barRound').oninput = e => { barRound = +e.target.value; updateSliders(); };
+$('barGap').oninput = e => { barGap = +e.target.value; updateSliders(); };
+$('glowBlur').oninput = e => { glowBlur = +e.target.value; updateSliders(); };
+$('glowBars').oninput = e => { glowBars = +e.target.value; updateSliders(); };
+$('glowCover').oninput = e => { glowCover = +e.target.value; updateSliders(); };
+$('glowText').oninput = e => { glowText = +e.target.value; updateSliders(); };
+syncBarUI();
 $('autoColorCycle').onchange = e => { autoColorCycle = e.target.checked; syncRainbowUI(); };
 $('cycleSpeed').oninput = e => { cycleSpeed = +e.target.value; updateSliders(); };
 $('rainbow').onchange = e => { rainbow = e.target.checked; syncRainbowUI(); };
@@ -440,6 +450,7 @@ $('starDensity').oninput = e => { starCfg.count = +e.target.value; updateSliders
 $('starSpeed').oninput = e => { starCfg.speed = +e.target.value; updateSliders(); };
 $('starBoost').oninput = e => { starCfg.boost = +e.target.value; updateSliders(); };
 $('starLight').oninput = e => { starCfg.light = +e.target.value; updateSliders(); };
+$('starColor').onchange = e => { starCfg.color = e.target.value; };
 $('partOn').onchange = e => { partCfg.on = e.target.checked; syncStarUI(); };
 $('partCount').oninput = e => { partCfg.count = +e.target.value; updateSliders(); };
 $('partSize').oninput = e => { partCfg.size = +e.target.value; updateSliders(); };
@@ -457,6 +468,12 @@ const SLIDER_INFO = {
   circWidth:   { unit: 'px',     tip: 'Thickness of each bar, in pixels.' },
   circCount:   { unit: 'bars',   tip: 'Number of bars around the ring.' },
   dotsCount:   { unit: 'bars',   tip: 'Number of columns in the LED matrix.' },
+  barRound:    { unit: 'px',     tip: 'Corner size for the Rounded and Beveled shapes, in pixels. Large values are limited to what fits the bar.' },
+  barGap:      { unit: 'px',     tip: 'Space between neighbouring bars, in pixels (63-bar and mirrored modes). Wider gaps make thinner bars.' },
+  glowBlur:    { unit: 'px',     tip: 'How far the glow spreads, in pixels of the 1920x1080 frame. Shared by bars, cover art and text.' },
+  glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars (every mode except the Ridgeline). 0% = off.' },
+  glowCover:   { scale: 100, unit: '%', tip: 'Glow around the cover artwork. 0% = off.' },
+  glowText:    { scale: 100, unit: '%', tip: 'Glow behind the artist, title and extra-info text. 0% = off.' },
   partSens:    { scale: 100, unit: '%', tip: 'How easily a bass hit releases particles. Lower it for very bassy songs: only the strongest hits (and fewer of them) will burst. Star flashes are not affected.' },
   mirCount:    { unit: 'bars',   tip: 'Number of bars in the mirrored spectrum. 63 matches the original; more bars look smoother, fewer look chunkier.' },
   cycleSpeed:  { unit: '°/s',    tip: 'Hue shift per second. 15°/s is one full trip around the color wheel every 24 seconds; 360°/s is one per second.' },
@@ -559,12 +576,16 @@ function analyse(dt) {
 
 function drawStars(bass, dt) {
   if (!starCfg.on) return;
+  let pal = null;   // per-star colours: a small palette, indexed by each star's own t
+  if (starCfg.color === 'gradient') { const c2 = useGradient ? gradientColor : visualColor; pal = Array.from({ length: 16 }, (_, k) => lerpHex(visualColor, c2, k / 15)); }
+  else if (starCfg.color === 'rainbow') { const t0 = performance.now() * 0.03; pal = Array.from({ length: 24 }, (_, k) => `hsl(${(t0 + k * 15) % 360} 100% 72%)`); }
   const rad = starCfg.angle * Math.PI / 180, dx = Math.sin(rad), dy = -Math.cos(rad);
   const sp = (1 + bass * starCfg.boost) * starCfg.speed * dt * 60;
   const f = starCfg.flash ? flash * starCfg.light : 0;
-  g.fillStyle = '#fff';
+  g.fillStyle = starCfg.color === 'main' ? visualColor : '#fff';
   for (let i = 0; i < starCfg.count; i++) {
     const s = stars[i];
+    if (pal) g.fillStyle = pal[Math.min(pal.length - 1, (s.t * pal.length) | 0)];
     s.x += (dx * s.k - dy * s.c) * sp; s.y += (dy * s.k + dx * s.c) * sp;
     if (s.x < -5) s.x = 1925; else if (s.x > 1925) s.x = -5;
     if (s.y < -5) s.y = 1085; else if (s.y > 1085) s.y = -5;
@@ -632,6 +653,21 @@ function fitText(txt, weight, size, maxW, ls = 0) {
   } while (g.measureText(txt).width > maxW && size > 20);
 }
 
+// One bar as a path. full = shape both ends (mirrored bars, capsules); otherwise the base stays flat on the baseline.
+function addBar(p, x, y, w, h, full) {
+  if (w <= 0 || h <= 0) return;
+  const lim = full ? Math.min(w, h) / 2 : Math.min(w / 2, h);
+  const r = Math.min(barShape === 'capsule' ? w / 2 : barRound, lim);
+  if (barShape === 'rect' || r < 0.5) { p.rect(x, y, w, h); return; }
+  if (barShape === 'beveled') {
+    p.moveTo(x + r, y); p.lineTo(x + w - r, y); p.lineTo(x + w, y + r);
+    if (full) { p.lineTo(x + w, y + h - r); p.lineTo(x + w - r, y + h); p.lineTo(x + r, y + h); p.lineTo(x, y + h - r); }
+    else { p.lineTo(x + w, y + h); p.lineTo(x, y + h); }
+    p.lineTo(x, y + r); p.closePath(); return;
+  }
+  if (!p.roundRect) { p.rect(x, y, w, h); return; }
+  p.roundRect(x, y, w, h, full ? r : [r, r, 0, 0]);
+}
 function frame() {
   const now = performance.now(), dt = Math.min(0.1, Math.max(0.004, (now - lastT) / 1000)); lastT = now;
   const bass = analyse(dt); ui();
@@ -687,6 +723,8 @@ function frame() {
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   const [r1, g1, b1] = rgb(c1), [r2, g2, b2] = rgb(c2);
   const FADE_FROM = 150, FADE_TO = 45;
+  const gRGB = rgb(lerpHex(c1, c2, 0.5));   // glow colour: the middle of the bar gradient (or the live rainbow hue)
+  const glowCol = a => rainbow ? `hsl(${rbOffset} 100% 60% / ${a})` : `rgba(${gRGB[0]},${gRGB[1]},${gRGB[2]},${a})`;
 
   const barGradient = g.createLinearGradient(X0, 0, X1, 0);
   barGradient.addColorStop(0, c1); barGradient.addColorStop(1, c2);
@@ -700,22 +738,26 @@ function frame() {
 
   // --- RENDER VISUALIZER MODES ---
   if (vizMode === 'bars') {
-    const gap = 7, w = (X1 - X0 - gap * (N - 1)) / N;
-    g.fillStyle = vizFill;
+    const gap = barGap, w = (X1 - X0 - gap * (N - 1)) / N, cap = barShape === 'capsule';
+    const all = new Path2D(), outlined = [];
     for (let i = 0; i < N; i++) {
       const h = MINH + vals[i] * (MAXH - MINH);
       const x = X0 + i * (w + gap), y = BASE - h;
-      g.fillRect(x, y, w, h);
+      addBar(all, x, y, w, h, cap);
       const tx = (x + w / 2 - X0) / (X1 - X0);
       const br = Math.max(r1 + (r2 - r1) * tx, g1 + (g2 - g1) * tx, b1 + (b2 - b1) * tx);
       let o = rainbow ? 0 : Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
       o = o * o * (3 - 2 * o);
-      if (o > 0.01) {
-        const lw = 1 + o;
-        g.globalAlpha = o; g.strokeStyle = '#fff'; g.lineWidth = lw;
-        g.strokeRect(x + lw / 2, y + lw / 2, Math.max(0, w - lw), Math.max(0, h - lw));
-        g.globalAlpha = 1;
-      }
+      if (o > 0.01) outlined.push([x, y, w, h, o]);   // near-black bars get a white outline that fades in
+    }
+    g.save();
+    if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
+    g.fillStyle = vizFill; g.fill(all);   // all bars as one path = one glow pass instead of 63
+    g.restore();
+    for (const [x, y, w2, h, o] of outlined) {
+      const lw = 1 + o, p = new Path2D();
+      addBar(p, x + lw / 2, y + lw / 2, Math.max(0, w2 - lw), Math.max(0, h - lw), cap);
+      g.globalAlpha = o; g.strokeStyle = '#fff'; g.lineWidth = lw; g.stroke(p); g.globalAlpha = 1;
     }
   } else if (vizMode === 'circular') {
     // ring centred on the canvas; bass at the top, mirrored left/right so it looks symmetric
@@ -729,15 +771,20 @@ function frame() {
       g.moveTo(CIRC_CX + Math.cos(a) * R, CIRC_CY + Math.sin(a) * R);
       g.lineTo(CIRC_CX + Math.cos(a) * (R + l), CIRC_CY + Math.sin(a) * (R + l));
     }
-    g.stroke(); g.lineCap = 'butt';
+    g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
+    g.stroke(); g.restore(); g.lineCap = 'butt';
   } else if (vizMode === 'mirrored') {
-    const cnt = mirCount, gap = Math.max(2, Math.min(10, 7 * N / cnt)), w = Math.max(1, (X1 - X0 - gap * (cnt - 1)) / cnt);
-    g.fillStyle = vizFill;
+    const cnt = mirCount, gap = Math.max(1, Math.min(barGap * 1.5, barGap * N / cnt)), w = Math.max(1, (X1 - X0 - gap * (cnt - 1)) / cnt);
+    const all = new Path2D();
     for (let i = 0; i < cnt; i++) {
       const f = cnt > 1 ? i / (cnt - 1) * (N - 1) : 0, a0 = Math.floor(f), v = vals[a0] + (vals[Math.min(N - 1, a0 + 1)] - vals[a0]) * (f - a0);   // interpolate between the 63 analysed bands
       const h = (MINH + v * (MAXH - MINH)) / 2, x = X0 + i * (w + gap);
-      g.fillRect(x, MID - h, w, h * 2);   // one rectangle per bar = no seam in the middle
+      addBar(all, x, MID - h, w, h * 2, true);   // one shape per bar = no seam in the middle
     }
+    g.save();
+    if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
+    g.fillStyle = vizFill; g.fill(all);
+    g.restore();
   } else if (vizMode === 'wave') {
     // Smooth Wave: one flowing glowing curve through all bands, with a soft fill underneath
     const K = 126, pts = [];
@@ -752,7 +799,7 @@ function frame() {
     g.save();
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(area);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
-    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30;
+    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
     g.stroke(line);
     g.restore();
   } else if (vizMode === 'wavemir') {
@@ -773,7 +820,7 @@ function frame() {
     g.save();
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(body);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
-    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30;
+    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
     g.stroke(tl); g.stroke(bl);
     g.restore();
   } else if (vizMode === 'dots') {
@@ -795,7 +842,9 @@ function frame() {
     }
     g.fillStyle = vizFill;
     g.globalAlpha = 0.1; g.fill(dim);
-    g.globalAlpha = 1; g.fill(lit);
+    g.globalAlpha = 1;
+    g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
+    g.fill(lit); g.restore();
     if (dotsPeak) { g.globalAlpha = 0.85; g.fill(pk); }
     g.globalAlpha = 1;
   } else if (vizMode === 'ridge') {
@@ -832,6 +881,7 @@ function frame() {
   const coverGradient = g.createLinearGradient(cx, cy, cx + cs, cy + cs);
   coverGradient.addColorStop(0, c1); coverGradient.addColorStop(1, c2);
 
+  g.save(); if (glowCover > 0) { g.shadowColor = glowCol(Math.min(1, glowCover)); g.shadowBlur = glowBlur; }
   if (coverImg) {
     const sq = Math.min(coverImg.width, coverImg.height);
     g.drawImage(coverImg, (coverImg.width - sq) / 2, (coverImg.height - sq) / 2, sq, sq, cx, cy, cs, cs);
@@ -841,8 +891,10 @@ function frame() {
     g.font = `800 ${cs * 0.573}px Montserrat`; g.textAlign = 'center';
     g.fillText('♪', cx + cs / 2, cy + cs * 0.703); g.textAlign = 'left';
   }
+  g.restore();
 
   // text: right of the cover normally, centred under the ring in circular mode
+  g.save(); if (glowText > 0) { g.shadowColor = glowCol(Math.min(1, glowText)); g.shadowBlur = glowBlur; }
   g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
   const artist = $('artist').value.toUpperCase(), title = $('title').value.toUpperCase(), extra = $('extra').value.trim().toUpperCase();
   const three = !!extra;
@@ -861,7 +913,9 @@ function frame() {
     g.fillText(title, 403, three ? 716 : 753);
     if (extra) { fitText(extra, 400, 48, X1 - 403, 0.015); g.fillText(extra, 403, 762); }
   }
+  g.restore();
   if ('letterSpacing' in g) g.letterSpacing = '0px';
+  if (expCanvas && recActive()) { expCtx.imageSmoothingQuality = 'high'; expCtx.drawImage(cv, 0, 0, expCanvas.width, expCanvas.height); }   // scaled copy for the chosen export resolution
   requestAnimationFrame(frame);
 }
 
@@ -877,6 +931,12 @@ $('snapshotBtn').onclick = () => {
 // --- Video Export via MediaRecorder ---
 const REC_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const recActive = () => mediaRecorder && mediaRecorder.state !== 'inactive';
+const EXPORT_FORMATS = [['WebM (VP9)', 'video/webm;codecs=vp9,opus'], ['WebM (VP8)', 'video/webm;codecs=vp8,opus'], ['WebM (browser default)', 'video/webm'],
+  ['MP4 (H.264)', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2'], ['MP4 (browser default)', 'video/mp4'], ['WebM (AV1)', 'video/webm;codecs=av1,opus']];
+if (typeof MediaRecorder !== 'undefined') {   // only offer what this browser can actually record; the first one is the default
+  EXPORT_FORMATS.forEach(([name, type]) => { if (MediaRecorder.isTypeSupported(type)) { const o = document.createElement('option'); o.value = type; o.textContent = name; $('expFormat').appendChild(o); } });
+}
+if (!$('expFormat').options.length) $('expFormat').innerHTML = '<option value="">Browser default</option>';
 function recSync() {   // recording follows playback: paused song = paused recording
   if (!recActive()) return;
   try {
@@ -893,7 +953,7 @@ function stopRecording(msg) {
 function recCleanup() {
   $('recBtn').classList.remove('rec', 'paused');
   try { if (src && recDest) src.disconnect(recDest); } catch (e) { }
-  recDest = null;
+  recDest = null; expCanvas = null; expCtx = null;
 }
 $('recBtn').onclick = () => {
   if (recActive()) { stopRecording(); return; }
@@ -901,14 +961,18 @@ $('recBtn').onclick = () => {
   if (!playing) { notify('Press play first, then start recording.', true); return; }
   if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { notify('Video export is not supported in this browser.', true); return; }
   try {
-    const stream = cv.captureStream(60);
+    const [expW, expH] = $('expRes').value.split('x').map(Number), expFps = +$('expFps').value;
+    let capCanvas = cv; expCanvas = expCtx = null;
+    if (expW !== cv.width || expH !== cv.height) { expCanvas = document.createElement('canvas'); expCanvas.width = expW; expCanvas.height = expH; expCtx = expCanvas.getContext('2d'); capCanvas = expCanvas; }
+    const stream = capCanvas.captureStream(expFps);
     recDest = ctx.createMediaStreamDestination();
     src.connect(recDest);
     recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported(t));
+    const type = $('expFormat').value || REC_TYPES.find(t => MediaRecorder.isTypeSupported(t));
     const ext = type && type.includes('mp4') ? 'mp4' : 'webm';
     recChunks = [];
-    mediaRecorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const bps = Math.min(40e6, Math.max(2e6, Math.round(8e6 * expW * expH / (1920 * 1080) * (expFps > 30 ? 1 : 0.7))));   // ~8 Mbit/s at 1080p60, scaled by size and rate
+    mediaRecorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: bps });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
     mediaRecorder.onerror = e => { recCleanup(); notify('Recording failed: ' + ((e.error && e.error.message) || 'unknown error'), true); };
     mediaRecorder.onstop = () => {
@@ -948,6 +1012,7 @@ function getSettings(withText) {
     useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
     cycleSpeed, rainbow: { on: rainbow, move: rbMove, dir: rbDir, speed: rbSpeed },
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
+    bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
     stars: { ...starCfg }, particles: { ...partCfg }
   };
@@ -965,11 +1030,14 @@ function applySettings(p) {
   const c = p.circ || {};
   setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count); setCtl('circSym', c.sym);
   setCtl('mirCount', (p.mir || {}).count); setCtl('dotsCount', (p.dots || {}).count); setCtl('dotsPeak', (p.dots || {}).peak);
+  const bs = p.bars || {}, gl = p.glow || {};
+  setCtl('barShape', bs.shape); setCtl('barRound', bs.round); setCtl('barGap', bs.gap);
+  setCtl('glowBlur', gl.blur); setCtl('glowBars', gl.bars); setCtl('glowCover', gl.cover); setCtl('glowText', gl.text);
   setCtl('bassPulse', p.bassPulse); setCtl('pulseAmt', p.pulseAmt); setCtl('bgAudioReactive', p.bgReactive); setCtl('bgPulseAmt', p.bgPulse); setCtl('sens', p.sens);
   const st = p.stars;
   if (st) {
     setCtl('starsOn', st.on); setCtl('starDensity', st.count); setCtl('starSpeed', st.speed);
-    setCtl('starBoost', st.boost); setCtl('starFlash', st.flash); setCtl('starLight', st.light);
+    setCtl('starBoost', st.boost); setCtl('starFlash', st.flash); setCtl('starLight', st.light); setCtl('starColor', st.color);
     if (typeof st.angle === 'number') { starCfg.angle = wrapDeg(st.angle); updateStarDial(); }
   }
   const q = p.particles;
@@ -1023,7 +1091,13 @@ const PRESETS = {
   }
 };
 { const sel = $('presetSelect'); sel.innerHTML = ''; Object.entries(PRESET_INFO).forEach(([k, v]) => sel.add(new Option(v[0], k))); }
-const NESTED = ['circ', 'rainbow', 'mir', 'dots', 'stars', 'particles'];
+const NESTED = ['circ', 'rainbow', 'mir', 'dots', 'bars', 'glow', 'stars', 'particles'];
+// glow / bar-shape touches for some of the built-in looks
+Object.assign(PRESETS.cyberpunk, { glow: { blur: 28, bars: 0.7, cover: 0.4, text: 0.3 } });
+Object.assign(PRESETS.neon, { glow: { blur: 32, bars: 0.8, cover: 0.5, text: 0.4 } });
+Object.assign(PRESETS.synthwave, { glow: { blur: 30, bars: 0.7, cover: 0.3, text: 0.5 }, bars: { shape: 'rounded', round: 5 } });
+Object.assign(PRESETS.chillwave, { bars: { shape: 'capsule' } });
+Object.assign(PRESETS.minimal, { bars: { shape: 'rounded', round: 3 } });
 function applyPreset(key) {
   const p = PRESETS[key]; if (!p) return;
   const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra;   // presets never touch the text
@@ -1090,10 +1164,12 @@ function randomizeSettings() {
     rainbow: { on: rainbowOn, move: chance(0.8), dir: pick([1, -1]), speed: R('rbSpeed', 0.05, 0.4) },
     mode: pick(MODES),
     circ: { radius: R('circRadius', 0.15, 0.8), length: R('circLength', 0.3, 0.8), width: R('circWidth', 0.15, 0.6), count: R('circCount', 0.2, 0.8), sym: chance(0.7) },
+    bars: { shape: pick(['rect', 'rounded', 'capsule', 'beveled']), round: R('barRound', 0.15, 0.8), gap: R('barGap', 0.1, 0.55) },
+    glow: { blur: R('glowBlur', 0.15, 0.6), bars: chance(0.5) ? R('glowBars', 0.3, 0.9) : 0, cover: chance(0.3) ? R('glowCover', 0.3, 0.8) : 0, text: chance(0.3) ? R('glowText', 0.3, 0.8) : 0 },
     mir: { count: R('mirCount', 0.2, 0.9) }, dots: { count: R('dotsCount', 0.2, 0.8), peak: chance(0.7) },
     sens: R('sens', 0.35, 0.7),
     bassPulse: chance(0.8), pulseAmt: R('pulseAmt', 0.1, 0.6), bgReactive: chance(0.4), bgPulse: R('bgPulseAmt', 0.2, 0.7),
-    stars: { on: chance(0.85), count: R('starDensity', 0.1, 0.7), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)) },
+    stars: { on: chance(0.85), count: R('starDensity', 0.1, 0.7), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)), color: pick(['white', 'white', 'main', 'gradient', 'rainbow']) },
     particles: { on: chance(0.8), count: R('partCount', 0.1, 0.6), size: R('partSize', 0.2, 0.6), speed: R('partSpeed', 0.2, 0.7) }
   });
 }
