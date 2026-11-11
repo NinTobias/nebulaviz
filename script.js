@@ -1008,7 +1008,7 @@ $('recBtn').onclick = () => {
     const ext = type && type.includes('mp4') ? 'mp4' : 'webm';
     recChunks = [];
     const bps = Math.min(40e6, Math.max(2e6, Math.round(8e6 * expW * expH / (1920 * 1080) * (expFps > 30 ? 1 : 0.7))));   // ~8 Mbit/s at 1080p60, scaled by size and rate
-    mediaRecorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: bps });
+    mediaRecorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: bps, audioBitsPerSecond: 256000});
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
     mediaRecorder.onerror = e => { recCleanup(); notify('Recording failed: ' + ((e.error && e.error.message) || 'unknown error'), true); };
     mediaRecorder.onstop = () => {
