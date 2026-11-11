@@ -1045,3 +1045,29 @@ body.dragging::after {
   padding-top: 0;
   padding-bottom: 0
 }
+
+/* native colour inputs (text and shadow colour) styled like the other controls */
+input[type=color] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #2f2d20;
+  background: var(--panel);
+  cursor: pointer
+}
+
+input[type=color]::-webkit-color-swatch-wrapper {
+  padding: 2px
+}
+
+input[type=color]::-webkit-color-swatch {
+  border: 0
+}
+
+input[type=color]::-moz-color-swatch {
+  border: 0
+}
+
+input[type=color]:disabled {
+  cursor: default
+}
