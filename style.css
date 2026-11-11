@@ -965,3 +965,83 @@ select option {
     width: min(100%, 460px)
   }
 }
+
+/* --- disabled buttons, song info, reset dialog, drop overlay --- */
+.btn:disabled {
+  opacity: .4;
+  cursor: default
+}
+
+.info {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 8px;
+  overflow-wrap: anywhere
+}
+
+dialog {
+  background: #15140f;
+  color: var(--ink);
+  border: 1px solid #2f2d20;
+  padding: 18px 20px;
+  max-width: min(92vw, 420px)
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, .7)
+}
+
+dialog h3 {
+  margin: 0 0 8px;
+  font-size: 15px
+}
+
+dialog p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--dim);
+  line-height: 1.5
+}
+
+.dlg-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end
+}
+
+body.dragging::after {
+  content: "Drop a song, a cover image or a project file";
+  position: fixed;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--overlay-accent);
+  background: rgba(0, 0, 0, .78);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+  padding: 20px;
+  z-index: 10001;
+  pointer-events: none
+}
+
+/* every button in a button row has the same height, whatever glyphs or fonts it contains */
+.choose-bar {
+  align-items: stretch
+}
+
+.choose-bar>.btn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  line-height: 1.2
+}
+
+/* the preset dropdown button: let the 40px row height decide, not the select's own height */
+.choose-bar>.preset-btn {
+  padding-top: 0;
+  padding-bottom: 0
+}
