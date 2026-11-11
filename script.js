@@ -154,6 +154,9 @@ $('song').onchange = async e => {
   try {
     buf = await ctx.decodeAudioData(await f.arrayBuffer());
     $('title').value = f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
+    const mm = Math.floor(buf.duration / 60), ss = Math.floor(buf.duration % 60);
+    $('songInfo').hidden = false;
+    $('songInfo').textContent = `${f.name} · ${mm}:${String(ss).padStart(2, '0')} · ${(buf.sampleRate / 1000).toFixed(1)} kHz · ${buf.numberOfChannels === 1 ? 'mono' : buf.numberOfChannels === 2 ? 'stereo' : buf.numberOfChannels + ' channels'} · ${(f.size / 1048576).toFixed(1)} MB`;
     stopAll();
     playing = false; icon(false); vals.fill(0); parts.length = 0;
     offset = 0; $('play').disabled = false; $('seek').disabled = false;
@@ -165,10 +168,10 @@ $('song').onchange = async e => {
 $('backgroundImage').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; syncBgImageUI(); }; im.src = r.result; };
+  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; syncBgImageUI(); commitHistory(); }; im.src = r.result; };
   r.readAsDataURL(f);
 };
-$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; syncBgImageUI(); };
+$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; syncBgImageUI(); commitHistory(); };
 function syncBgImageUI() {   // an image covers the color/gradient, so those controls are dimmed (not disabled)
   $('bgColorOpts').classList.toggle('off', !!backgroundImg);
   $('bgImageHint').hidden = !backgroundImg;
@@ -177,10 +180,10 @@ function syncBgImageUI() {   // an image covers the color/gradient, so those con
 $('cover').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { coverImg = im; }; im.src = r.result; };
+  r.onload = () => { const im = new Image(); im.onload = () => { coverImg = im; commitHistory(); }; im.src = r.result; };
   r.readAsDataURL(f);
 };
-$('removeCoverImage').onclick = () => { coverImg = null; $('cover').value = ''; };
+$('removeCoverImage').onclick = () => { coverImg = null; $('cover').value = ''; commitHistory(); };
 
 $('play').onclick = async () => {
   if (!buf) return;
@@ -572,7 +575,8 @@ function drawStars(bass, dt) {
 }
 
 const parts = [];
-const peaks = new Float32Array(160), ridgeHist = [], RIDGE_ROWS = 14; let ridgeAcc = 0;   // LED-matrix peak dots, ridgeline history
+const peaks = new Float32Array(160), ridgeHist = [], RIDGE_ROWS = 14; let ridgeAcc = 0;
+const ridgeBG = document.createElement('canvas'); ridgeBG.width = 1920; ridgeBG.height = 1080; const rbg = ridgeBG.getContext('2d');   // backdrop snapshot for the ridgeline   // LED-matrix peak dots, ridgeline history
 function ridgePaths(row, amp) {   // one ridge row as paths at y = 0 (moved into place with translate), so old rows are built only once
   const p = new Path2D(); p.moveTo(X0, -row[0] * amp);
   for (let i = 1; i < N - 1; i++) {
@@ -677,6 +681,7 @@ function frame() {
     g.restore();
   }
   drawStars(bass, mdt);
+  if (vizMode === 'ridge') rbg.drawImage(cv, 0, 0);   // background + pulse + stars, before any ridge is drawn
 
   const c1 = visualColor, c2 = useGradient ? gradientColor : visualColor;
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -802,7 +807,9 @@ function frame() {
     g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = vizFill;
     const drawRow = (rp, by, fade) => {
       g.save(); g.translate(0, by);
-      g.globalAlpha = 0.55 * fade; g.fillStyle = '#000'; g.fill(rp.area);   // dark body hides the rows behind it
+      g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
+      g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
+      g.restore();
       g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
       g.restore();
     };
@@ -970,13 +977,63 @@ function applySettings(p) {
   updateOverlayTheme(); updateSliders();
 }
 
+const DEFAULTS = getSettings(true);   // snapshot of the starting look: used by Reset and as the base of every preset
+const PRESET_INFO = {   // [display name, short description]
+  default: ['Default Nebula', 'The original yellow look.'],
+  cyberpunk: ['Cyberpunk Neon', 'Cyan and magenta ring on near-black.'],
+  sunset: ['Sunset Vibes', 'Warm orange to pink, mirrored bars.'],
+  monochrome: ['Minimal Mono', 'White on black, nothing else.'],
+  cinematic: ['Cinematic', 'Warm gold and rust, slow drifting stars, restrained motion.'],
+  neon: ['Neon Ring', 'Electric green and cyan ring, dense fast stars, strong bursts.'],
+  chillwave: ['Chillwave', 'Soft cyan and pink on purple, gentle waveform.'],
+  synthwave: ['Synthwave', 'Hot pink and cyan bars on deep purple, stars flying down.'],
+  minimal: ['Clean Minimal', 'Plain white bars, no stars, no particles, no pulsing.'],
+  darkclub: ['Dark Club', 'Red and violet ridgeline, heavy bass flashes and particles.']
+};
 const PRESETS = {
   default: { main: '#f2d90a', end: '#ff6a00', bg: '#000000', bgEnd: '#1a0b3d', useGrad: false, useBgGrad: true, mode: 'bars' },
   cyberpunk: { main: '#00f0ff', end: '#ff0055', bg: '#05020a', bgEnd: '#150526', useGrad: true, useBgGrad: true, mode: 'circular' },
   sunset: { main: '#ff7700', end: '#ff00aa', bg: '#100514', bgEnd: '#320d3e', useGrad: true, useBgGrad: true, mode: 'mirrored' },
-  monochrome: { main: '#ffffff', end: '#888888', bg: '#000000', bgEnd: '#111111', useGrad: true, useBgGrad: true, mode: 'bars' }
+  monochrome: { main: '#ffffff', end: '#888888', bg: '#000000', bgEnd: '#111111', useGrad: true, useBgGrad: true, mode: 'bars' },
+  cinematic: {
+    main: '#e9c46a', end: '#e76f51', bg: '#050403', bgEnd: '#1c130b', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'mirrored', mir: { count: 80 },
+    sens: 0.9, bassPulse: true, pulseAmt: 0.05, bgReactive: false,
+    stars: { on: true, count: 140, speed: 0.35, boost: 3, flash: true, light: 0.6, angle: 270 }, particles: { on: true, count: 18, size: 2.5, speed: 0.6, sens: 0.6 }
+  },
+  neon: {
+    main: '#39ff14', end: '#00e5ff', bg: '#020308', bgEnd: '#06122b', useGrad: true, useBgGrad: true, bgAngle: 200, mode: 'circular',
+    circ: { radius: 210, length: 200, width: 6, count: 96, sym: true }, overlay: true, sens: 1.1, pulseAmt: 0.12, bgReactive: true, bgPulse: 0.2,
+    stars: { on: true, count: 320, speed: 1.4, boost: 12, flash: true, light: 1.4, angle: 270 }, particles: { on: true, count: 70, size: 3, speed: 1.3, sens: 1 }
+  },
+  chillwave: {
+    main: '#7df9ff', end: '#ff9ad5', bg: '#1b1035', bgEnd: '#3a1c71', useGrad: true, useBgGrad: true, bgAngle: 160, mode: 'wave', sens: 0.9, pulseAmt: 0.06,
+    stars: { on: true, count: 180, speed: 0.5, boost: 4, flash: true, light: 0.8, angle: 300 }, particles: { on: true, count: 22, size: 4, speed: 0.6, sens: 0.7 }
+  },
+  synthwave: {
+    main: '#ff2a6d', end: '#05d9e8', bg: '#0b0221', bgEnd: '#2b0a4a', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'bars', overlay: true, sens: 1.1, bgReactive: true, bgPulse: 0.15,
+    stars: { on: true, count: 220, speed: 0.9, boost: 8, flash: true, light: 1, angle: 180 }, particles: { on: true, count: 45, size: 3, speed: 1, sens: 1 }
+  },
+  minimal: {
+    main: '#ffffff', end: '#ffffff', useGrad: false, bg: '#0a0a0a', bgEnd: '#0a0a0a', useBgGrad: false, mode: 'bars', bassPulse: false, bgReactive: false, sens: 1,
+    stars: { on: false }, particles: { on: false }
+  },
+  darkclub: {
+    main: '#ff0033', end: '#7a00ff', bg: '#000000', bgEnd: '#14001f', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'ridge', sens: 1.15, pulseAmt: 0.1, bgReactive: true, bgPulse: 0.25,
+    stars: { on: true, count: 100, speed: 0.7, boost: 10, flash: true, light: 1.2, angle: 90 }, particles: { on: true, count: 90, size: 3, speed: 1.2, sens: 1 }
+  }
 };
-$('presetSelect').onchange = e => { const p = PRESETS[e.target.value]; if (p) applySettings(p); };
+{ const sel = $('presetSelect'); sel.innerHTML = ''; Object.entries(PRESET_INFO).forEach(([k, v]) => sel.add(new Option(v[0], k))); }
+const NESTED = ['circ', 'rainbow', 'mir', 'dots', 'stars', 'particles'];
+function applyPreset(key) {
+  const p = PRESETS[key]; if (!p) return;
+  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra;   // presets never touch the text
+  const m = { ...base, ...p };
+  NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
+  applySettings(m);
+  commitHistory();
+  notify(PRESET_INFO[key] ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.');
+}
+$('presetSelect').onchange = e => applyPreset(e.target.value);
 
 $('savePresetBtn').onclick = () => {
   const name = (prompt('Enter preset name:') || '').trim();
@@ -1020,15 +1077,101 @@ $('importJsonFile').onchange = e => {
 };
 
 function randomizeSettings() {
-  const rnd = (a, b) => a + Math.random() * (b - a), h = rnd(0, 360);
+  const rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)], chance = p => Math.random() < p;
+  // a value inside the slider's own range (a..b = the part of the range to use), snapped to its step
+  const R = (id, a = 0, b = 1) => { const el = $(id), mn = +el.min, mx = +el.max, st = +el.step || 1; return +(Math.round((mx - mn) * rnd(a, b) / st) * st + mn).toFixed(4); };
+  const h = rnd(0, 360), h2 = { analog: h + rnd(25, 60), complement: h + 180 + rnd(-20, 20), triad: h + 120, mono: h }[pick(['analog', 'complement', 'triad', 'mono'])] % 360;
+  const rainbowOn = chance(0.12);
   applySettings({
-    main: hsvToHex(h, rnd(0.65, 1), rnd(0.85, 1)), end: hsvToHex((h + rnd(40, 160)) % 360, rnd(0.65, 1), rnd(0.85, 1)),
+    main: hsvToHex(h, rnd(0.65, 1), rnd(0.85, 1)), end: hsvToHex(h2, rnd(0.6, 1), rnd(0.8, 1)),
     bg: hsvToHex(h, rnd(0.3, 0.8), rnd(0.03, 0.1)), bgEnd: hsvToHex((h + rnd(20, 80)) % 360, rnd(0.4, 0.9), rnd(0.12, 0.28)),
-    useGrad: true, useBgGrad: true, bgAngle: Math.round(rnd(0, 360)),
-    mode: MODES[Math.floor(Math.random() * MODES.length)]
+    useGrad: chance(0.8), useBgGrad: chance(0.85), bgAngle: Math.round(rnd(0, 360)), overlay: chance(0.5),
+    autoCycle: !rainbowOn && chance(0.1), cycleSpeed: R('cycleSpeed', 0.05, 0.4),
+    rainbow: { on: rainbowOn, move: chance(0.8), dir: pick([1, -1]), speed: R('rbSpeed', 0.05, 0.4) },
+    mode: pick(MODES),
+    circ: { radius: R('circRadius', 0.15, 0.8), length: R('circLength', 0.3, 0.8), width: R('circWidth', 0.15, 0.6), count: R('circCount', 0.2, 0.8), sym: chance(0.7) },
+    mir: { count: R('mirCount', 0.2, 0.9) }, dots: { count: R('dotsCount', 0.2, 0.8), peak: chance(0.7) },
+    sens: R('sens', 0.35, 0.7),
+    bassPulse: chance(0.8), pulseAmt: R('pulseAmt', 0.1, 0.6), bgReactive: chance(0.4), bgPulse: R('bgPulseAmt', 0.2, 0.7),
+    stars: { on: chance(0.85), count: R('starDensity', 0.1, 0.7), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)) },
+    particles: { on: chance(0.8), count: R('partCount', 0.1, 0.6), size: R('partSize', 0.2, 0.6), speed: R('partSpeed', 0.2, 0.7) }
   });
 }
-$('randomizeBtn').onclick = () => { randomizeSettings(); notify('Random look applied.'); };
+$('randomizeBtn').onclick = () => { randomizeSettings(); commitHistory(); notify('Random look applied. Undo (Ctrl+Z) brings your old one back.'); };
+
+// --- Undo / redo / reset to defaults ---
+// A step = all settings + which cover / background image is loaded. Every change (sliders, toggles, pickers, dials, text, presets,
+// import, randomize, image drops/removals) adds one step; dragging a slider or wheel counts as one.
+// A step is only added when the USER changed something (the "dirty" flag), never because something moves by itself
+// (auto color cycling), which is what used to throw away the redo steps.
+const takeSnap = () => ({ s: JSON.stringify(getSettings(true)), cover: coverImg, bg: backgroundImg });
+const hist = [takeSnap()]; let hIdx = 0, restoring = false, dirty = false, hTimer;
+function syncHistUI() { $('undoBtn').disabled = hIdx <= 0; $('redoBtn').disabled = hIdx >= hist.length - 1; }
+function commitHistory() {   // save the current state as a new step (nothing happens if it equals the current step)
+  clearTimeout(hTimer); dirty = false;
+  if (restoring) return;
+  const n = takeSnap(), c = hist[hIdx];
+  if (n.s === c.s && n.cover === c.cover && n.bg === c.bg) return;
+  hist.length = hIdx + 1; hist.push(n);
+  if (hist.length > 100) hist.shift();
+  hIdx = hist.length - 1; syncHistUI();
+}
+const flushHistory = () => { if (dirty) commitHistory(); };
+const commitSoon = () => { if (restoring) return; dirty = true; clearTimeout(hTimer); hTimer = setTimeout(flushHistory, 500); };
+const mainEl = document.querySelector('main');
+['input', 'change'].forEach(t => mainEl.addEventListener(t, e => { if (!e.target.closest('.stage')) commitSoon(); }));   // not the seek bar / volume
+mainEl.addEventListener('pointerup', e => { if (e.target.closest('.groups')) commitSoon(); });                           // color wheels and dials
+function jumpHistory(i) {
+  clearTimeout(hTimer); dirty = false;
+  hIdx = i; restoring = true;
+  try {
+    const e = hist[i];
+    applySettings(JSON.parse(e.s));
+    coverImg = e.cover; backgroundImg = e.bg; syncBgImageUI();
+  } finally { restoring = false; }
+  dirty = false; syncHistUI();
+}
+function undo() { flushHistory(); if (hIdx > 0) jumpHistory(hIdx - 1); }
+function redo() { flushHistory(); if (hIdx < hist.length - 1) jumpHistory(hIdx + 1); }
+$('undoBtn').onclick = undo; $('redoBtn').onclick = redo;
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase(), t = e.target;
+  if ((t.tagName === 'INPUT' && ['text', 'number'].includes(t.type)) || t.tagName === 'TEXTAREA') return;   // keep the browser's own text undo
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+$('resetBtn').onclick = () => { $('resetDlg').returnValue = ''; $('resetDlg').showModal(); };
+$('resetDlg').addEventListener('close', () => {
+  if ($('resetDlg').returnValue !== 'ok') return;
+  commitHistory();   // save the current look first, so the reset can be undone
+  const d = { ...DEFAULTS }; delete d.artist; delete d.title; delete d.extra;
+  applySettings(d);
+  commitHistory();
+  notify('Settings reset to defaults. Undo (Ctrl+Z) brings them back.');
+});
+syncHistUI();
+
+// --- Drag & drop: audio -> song, images -> cover (or background when dropped on the Background group), .json -> import ---
+const AUDIO_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i;
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+document.addEventListener('dragenter', e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dragging'); } });
+document.addEventListener('dragleave', e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  const grp = e.target.closest && e.target.closest('.group'), toBg = !!grp && grp.contains($('backgroundImage'));
+  const used = new Set();
+  for (const f of e.dataTransfer.files) {
+    const kind = (f.type.startsWith('audio/') || AUDIO_EXT.test(f.name)) ? 'song' : f.type.startsWith('image/') ? (toBg ? 'backgroundImage' : 'cover') : /\.json$/i.test(f.name) ? 'importJsonFile' : null;
+    if (!kind || used.has(kind)) continue;   // first file of each kind wins
+    used.add(kind);
+    const dt = new DataTransfer(); dt.items.add(f); $(kind).files = dt.files; $(kind).dispatchEvent(new Event('change'));
+  }
+  if (!used.size) notify('Drop an audio file, an image or a project .json file.', true);
+});
 
 // --- Keyboard Shortcuts & Fullscreen ---
 const stage = $('stage'), fsBtn = $('fsBtn'), barBtn = $('barToggle');
