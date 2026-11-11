@@ -98,6 +98,20 @@
 							</select>
 						</label>
 					</div>
+					<div class="slider-col" id="barOpts">
+						<label class="toggle">Bar shape
+							<select id="barShape" class="btn">
+								<option value="rect">Rectangle</option>
+								<option value="rounded">Rounded</option>
+								<option value="capsule">Capsule</option>
+								<option value="beveled">Beveled</option>
+							</select>
+						</label>
+						<label class="sens">Corner size<input type="range" id="barRound" min="0" max="12" step="0.5"
+								value="4"></label>
+						<label class="sens">Spacing<input type="range" id="barGap" min="1" max="20" step="0.5"
+								value="7"></label>
+					</div>
 					<div class="slider-col" id="mirroredOpts" hidden>
 						<label class="sens">Bar count<input type="range" id="mirCount" min="16" max="160" step="1"
 								value="63"></label>
@@ -280,6 +294,23 @@
 				</div>
 			</details>
 			<details class="group">
+				<summary>Glow</summary>
+				<div class="group-body">
+					<div class="slider-col">
+						<label class="sens">Blur radius<input type="range" id="glowBlur" min="2" max="80" step="1"
+								value="24"></label>
+						<label class="sens">Bars<input type="range" id="glowBars" min="0" max="1" step="0.05"
+								value="0"></label>
+						<label class="sens">Cover art<input type="range" id="glowCover" min="0" max="1" step="0.05"
+								value="0"></label>
+						<label class="sens">Text<input type="range" id="glowText" min="0" max="1" step="0.05"
+								value="0"></label>
+					</div>
+					<div class="hint">The glow uses your main color (or the rainbow hue). 0% turns a glow off. The
+						Ridgeline has no glow.</div>
+				</div>
+			</details>
+			<details class="group">
 				<summary>Stars & Particles</summary>
 				<div class="group-body">
 					<div class="settings-row">
@@ -295,6 +326,14 @@
 						<label class="toggle"><input type="checkbox" id="starFlash" checked> Light up on beat</label>
 						<label class="sens">Intensity<input type="range" id="starLight" min="0" max="3" step="0.05"
 								value="1"></label>
+						<label class="toggle">Color
+							<select id="starColor" class="btn">
+								<option value="white">White</option>
+								<option value="main">Main color</option>
+								<option value="gradient">Gradient colors</option>
+								<option value="rainbow">Rainbow</option>
+							</select>
+						</label>
 					</div>
 					<div class="settings-row" style="margin-top:24px">
 						<label class="toggle"><input type="checkbox" id="partOn" checked> Particle bursts on
@@ -323,6 +362,32 @@
 										class="angle-in" id="starAngleIn" min="0" max="360" step="1" value="270"
 										aria-label="Direction angle in degrees">°</span></label>
 						</div>
+					</div>
+				</div>
+			</details>
+			<details class="group">
+				<summary>Video export</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle">Format <select id="expFormat" class="btn"></select></label>
+						<label class="toggle">Resolution
+							<select id="expRes" class="btn">
+								<option value="1280x720">1280 × 720</option>
+								<option value="1920x1080" selected>1920 × 1080</option>
+								<option value="2560x1440">2560 × 1440</option>
+								<option value="3840x2160">3840 × 2160</option>
+							</select>
+						</label>
+						<label class="toggle">Frame rate
+							<select id="expFps" class="btn">
+								<option value="24">24 fps</option>
+								<option value="30">30 fps</option>
+								<option value="60" selected>60 fps</option>
+							</select>
+						</label>
+					</div>
+					<div class="hint">Applies to the next recording (camera button on the player). The picture is drawn
+						at 1920 × 1080 and scaled, so 4K is an upscale. Only formats your browser can record are listed.
 					</div>
 				</div>
 			</details>
