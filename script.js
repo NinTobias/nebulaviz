@@ -40,6 +40,8 @@ const inkFor = hex => {
   return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? '#000' : '#fff';
 };
 const midHex = (a, b) => '#' + rgbOf(a).map((v, i) => Math.round((v + rgbOf(b)[i]) / 2).toString(16).padStart(2, '0')).join('');
+const lumHex = hex => { const l = rgbOf(hex).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
+const crOf = (a, b) => { const x = lumHex(a), y = lumHex(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 const pickerState = {
   main: { h: 52, s: 0.96, v: 0.95 },
   end: { h: 25, s: 1, v: 1 },
@@ -87,9 +89,8 @@ function updateOverlayTheme() {
   root.style.setProperty('--accent-ink', inkFor(a));
   root.style.setProperty('--accent-edge', isDark(a) ? EDGE : 'transparent');
   root.style.setProperty('--overlay-edge', isDark(a) || isDark(b) ? EDGE : 'transparent');
-  root.style.setProperty('--overlay-ink', inkFor(useGradient && overlayColors ? midHex(a, b) : a));
-  root.style.setProperty('--overlay-fill', useGradient && overlayColors
-    ? `linear-gradient(90deg, ${a}, ${b})` : a);
+  root.style.setProperty('--overlay-ink', inkFor(a));   // solid fill: one ink color can't be readable across a gradient
+  root.style.setProperty('--overlay-fill', a);
   updateSliders();
 }
 $('overlayColors').onchange = updateOverlayTheme;
@@ -130,8 +131,8 @@ function layout() {
   beatK0 = Math.max(1, Math.floor(30 / hz)); beatK1 = Math.floor(150 / hz) + 1;   // beat detector listens to 30-150 Hz
 }
 
-const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>', STOP = '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
-function icon(p) { $('play').innerHTML = p ? STOP : PLAY; $('play').setAttribute('aria-label', p ? 'Stop' : 'Play'); }
+const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>', STOP = '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+function icon(p) { $('play').innerHTML = p ? STOP : PLAY; $('play').setAttribute('aria-label', p ? 'Pause' : 'Play'); }
 icon(false);
 
 function stopAll() { for (const n of [src, asrc]) if (n) { n.onended = null; try { n.stop(); } catch (e) { } } }
@@ -139,7 +140,6 @@ function startAt(off) {
   setup();
   stopAll();
   src = ctx.createBufferSource(); src.buffer = buf; src.connect(outGain);
-  if (recDest) src.connect(recDest);   // keep the recording's audio alive across seeks/resumes
   src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); parts.length = 0; stopRecording('Song ended. Video saved.'); } };
   src.start(0, off);
   asrc = null;
@@ -150,13 +150,17 @@ function startAt(off) {
   icon(true);
 }
 
+let loadGen = 0;
 $('song').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
+  const gen = ++loadGen;
   setup();
   stopRecording();
   $('status').textContent = 'Decoding audio…';
   try {
-    buf = await ctx.decodeAudioData(await f.arrayBuffer());
+    const decoded = await ctx.decodeAudioData(await f.arrayBuffer());
+    if (gen !== loadGen) return;   // a newer selection started: drop this stale result
+    buf = decoded;
     $('title').value = f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
     const mm = Math.floor(buf.duration / 60), ss = Math.floor(buf.duration % 60);
     $('songInfo').hidden = false;
@@ -166,14 +170,32 @@ $('song').onchange = async e => {
     offset = 0; $('play').disabled = false; $('seek').disabled = false;
     $('status').textContent = 'Ready. Press Play or Spacebar.';
     if ($('presetRandomize').checked) randomizeSettings();
-  } catch (err) { notify('Could not read that audio file. Try MP3, WAV or OGG.', true); }
+  } catch (err) {
+    if (gen !== loadGen) return;
+    console.error('Audio decode failed:', { name: f.name, type: f.type || '(unknown)', size: f.size }, err);
+    notify(`Could not decode "${f.name}" (${f.type || 'unknown type'}${err && err.message ? ': ' + err.message : ''}). ${buf ? 'Your previous song is still loaded.' : 'No song is loaded.'} Supported formats depend on your browser.`, true);
+  }
 };
 
+const IMG_MAX_BYTES = 25 * 1048576, IMG_MAX_PX = 4096;
+function loadImage(f, what, cb) {   // size limit, error messages, and downscaling of huge images
+  if (!f.type.startsWith('image/')) { notify(`That file is not an image.`, true); return; }
+  if (f.size > IMG_MAX_BYTES) { notify(`That ${what} image is larger than 25 MB.`, true); return; }
+  const url = URL.createObjectURL(f), im = new Image();
+  im.onload = () => {
+    URL.revokeObjectURL(url);
+    const w = im.naturalWidth, h = im.naturalHeight, m = Math.max(w, h);
+    if (!w || !h) { notify(`Could not read that ${what} image.`, true); return; }
+    let out = im;
+    if (m > IMG_MAX_PX) { const k = IMG_MAX_PX / m, c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); out = c; }
+    cb(out);
+  };
+  im.onerror = () => { URL.revokeObjectURL(url); notify(`Could not load that ${what} image. It may be corrupt or in an unsupported format.`, true); };
+  im.src = url;
+}
 $('backgroundImage').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { backgroundImg = im; syncBgImageUI(); commitHistory(); }; im.src = r.result; };
-  r.readAsDataURL(f);
+  loadImage(f, 'background', im => { backgroundImg = im; syncBgImageUI(); commitHistory(); });
 };
 $('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; syncBgImageUI(); commitHistory(); };
 function syncBgImageUI() {   // an image covers the color/gradient, so those controls are dimmed (not disabled)
@@ -183,9 +205,7 @@ function syncBgImageUI() {   // an image covers the color/gradient, so those con
 
 $('cover').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { coverImg = im; commitHistory(); }; im.src = r.result; };
-  r.readAsDataURL(f);
+  loadImage(f, 'cover', im => { coverImg = im; commitHistory(); });
 };
 $('removeCoverImage').onclick = () => { coverImg = null; $('cover').value = ''; commitHistory(); };
 
@@ -759,6 +779,11 @@ function frame() {
 
   const barGradient = g.createLinearGradient(X0, 0, X1, 0);
   barGradient.addColorStop(0, c1); barGradient.addColorStop(1, c2);
+  // Contrast safety: when the chosen colors are too close to the background an outline in the opposite tone is added. The colors themselves are never changed.
+  const bgRefs = backgroundImg ? [] : useBgGradient ? [backgroundColor, backgroundEndColor] : [backgroundColor];
+  const needOL = cr => Math.min(1, Math.max(0, (3 - cr) / 1.5));
+  const ol = rainbow ? 0 : needOL(Math.min(...[c1, c2].flatMap(a => bgRefs.map(b => crOf(a, b)))));
+  const olCol = bgRefs.length ? inkFor(lerpHex(bgRefs[0], bgRefs[bgRefs.length - 1], 0.5)) : '#000';
 
   // Rainbow: every hue across the bars (or around the ring); rbOffset slides it
   let vizFill = barGradient;
@@ -784,6 +809,7 @@ function frame() {
     g.save();
     if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.fillStyle = vizFill; g.fill(all);   // all bars as one path = one glow pass instead of 63
+    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 2; g.stroke(all); g.globalAlpha = 1; }
     g.restore();
     for (const [x, y, w2, h, o] of outlined) {
       const lw = 1 + o, p = new Path2D();
@@ -802,6 +828,7 @@ function frame() {
       g.moveTo(CIRC_CX + Math.cos(a) * R, CIRC_CY + Math.sin(a) * R);
       g.lineTo(CIRC_CX + Math.cos(a) * (R + l), CIRC_CY + Math.sin(a) * (R + l));
     }
+    if (ol > 0) { g.save(); g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = circWidth + 4; g.stroke(); g.restore(); }
     g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.stroke(); g.restore(); g.lineCap = 'butt';
   } else if (vizMode === 'mirrored') {
@@ -815,6 +842,7 @@ function frame() {
     g.save();
     if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.fillStyle = vizFill; g.fill(all);
+    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 2; g.stroke(all); g.globalAlpha = 1; }
     g.restore();
   } else if (vizMode === 'wave') {
     // Smooth Wave: one flowing glowing curve through all bands, with a soft fill underneath
@@ -831,6 +859,7 @@ function frame() {
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(area);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
     g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
+    if (ol > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 10; g.stroke(line); g.restore(); }
     g.stroke(line);
     g.restore();
   } else if (vizMode === 'wavemir') {
@@ -852,6 +881,7 @@ function frame() {
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(body);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
     g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
+    if (ol > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 10; g.stroke(tl); g.stroke(bl); g.restore(); }
     g.stroke(tl); g.stroke(bl);
     g.restore();
   } else if (vizMode === 'dots') {
@@ -875,7 +905,9 @@ function frame() {
     g.globalAlpha = 0.1; g.fill(dim);
     g.globalAlpha = 1;
     g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
-    g.fill(lit); g.restore();
+    g.fill(lit);
+    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 1.5; g.stroke(lit); g.globalAlpha = 1; }
+    g.restore();
     if (dotsPeak) { g.globalAlpha = 0.85; g.fill(pk); }
     g.globalAlpha = 1;
   } else if (vizMode === 'ridge') {
@@ -890,6 +922,7 @@ function frame() {
       g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
       g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
       g.restore();
+      if (ol > 0) { g.globalAlpha = fade * ol; g.strokeStyle = olCol; g.lineWidth = 4.5 + 1.5 * fade; g.stroke(rp.curve); g.strokeStyle = vizFill; }
       g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
       g.restore();
     };
@@ -935,8 +968,10 @@ function frame() {
   const lineY = i => yy[0] + (yy[i] - yy[0]) * ts + T.y;                                                  // spacing between lines grows with the size
   const sp = T.space / 100, shRGB = rgbOf(T.shColor);
   g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
+  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read
   const drawLine = (txt, y) => {
     let drawn = false;
+    if (tol > 0) { g.save(); g.globalAlpha = tol; g.strokeStyle = olCol; g.lineWidth = 6; g.lineJoin = 'round'; g.strokeText(txt, ax, y); g.restore(); }
     if (T.shOp > 0) {   // drop shadow
       g.save(); g.shadowColor = `rgba(${shRGB[0]},${shRGB[1]},${shRGB[2]},${T.shOp})`; g.shadowBlur = T.shBlur; g.shadowOffsetX = T.shX; g.shadowOffsetY = T.shY;
       g.fillText(txt, ax, y); g.restore(); drawn = true;
@@ -988,7 +1023,7 @@ function stopRecording(msg) {
 }
 function recCleanup() {
   $('recBtn').classList.remove('rec', 'paused');
-  try { if (src && recDest) src.disconnect(recDest); } catch (e) { }
+  try { if (outGain && recDest) outGain.disconnect(recDest); } catch (e) { }
   recDest = null; expCanvas = null; expCtx = null;
 }
 $('recBtn').onclick = () => {
@@ -1002,29 +1037,38 @@ $('recBtn').onclick = () => {
     if (expW !== cv.width || expH !== cv.height) { expCanvas = document.createElement('canvas'); expCanvas.width = expW; expCanvas.height = expH; expCtx = expCanvas.getContext('2d'); capCanvas = expCanvas; }
     const stream = capCanvas.captureStream(expFps);
     recDest = ctx.createMediaStreamDestination();
-    src.connect(recDest);
+    outGain.connect(recDest);   // export follows the volume slider / mute, and survives seeks (new sources feed outGain)
     recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
     const type = $('expFormat').value || REC_TYPES.find(t => MediaRecorder.isTypeSupported(t));
     const ext = type && type.includes('mp4') ? 'mp4' : 'webm';
     recChunks = [];
     const bps = Math.min(40e6, Math.max(2e6, Math.round(8e6 * expW * expH / (1920 * 1080) * (expFps > 30 ? 1 : 0.7))));   // ~8 Mbit/s at 1080p60, scaled by size and rate
-    mediaRecorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: bps, audioBitsPerSecond: 256000});
+    mediaRecorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: bps, audioBitsPerSecond: +$('expAudioBr').value});
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-    mediaRecorder.onerror = e => { recCleanup(); notify('Recording failed: ' + ((e.error && e.error.message) || 'unknown error'), true); };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-      recCleanup();
-      stream.getTracks().forEach(t => t.stop());
+    const rec = mediaRecorder; let finished = false;
+    const finish = save => {   // the single finalisation path for stop, error and song end; runs once
+      if (finished) return false; finished = true;
+      recCleanup(); stream.getTracks().forEach(t => t.stop());
+      if (!save || !recChunks.length) return false;
+      const blob = new Blob(recChunks, { type: rec.mimeType || 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = (($('title').value || 'visualizer').replace(/[\\/:*?"<>|]/g, '_')) + '.' + ext;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      notify(recNote);
+      return true;
     };
-    mediaRecorder.start();
+    rec.onerror = e => {   // partial recordings are discarded on error
+      finish(false);
+      try { if (rec.state !== 'inactive') rec.stop(); } catch (_) { }
+      notify('Recording failed: ' + ((e.error && e.error.message) || 'unknown error'), true);
+    };
+    rec.onstop = () => { const was = finished; if (finish(true)) notify(recNote); else if (!was) notify('Recording stopped, but no video data was captured.', true); };
+    rec.start();
     $('recBtn').classList.add('rec');
-    notify('Recording… pausing the song pauses the recording. Click the camera button again to stop and save.');
+    const kb = Math.round((rec.audioBitsPerSecond || 0) / 1000), mb = ((rec.videoBitsPerSecond || 0) / 1e6).toFixed(1);
+    console.info('Recorder:', rec.mimeType, 'audio bps', rec.audioBitsPerSecond, 'video bps', rec.videoBitsPerSecond);
+    notify(`Recording (${rec.mimeType || 'browser default'}; browser reports audio ${kb || '?'} kbps, video ${mb} Mbit/s). Pausing the song pauses the recording. Click the camera button again to stop and save.`);
   } catch (err) { recCleanup(); notify('Video recording error: ' + err.message, true); }
 };
 
@@ -1156,8 +1200,11 @@ $('savePresetBtn').onclick = () => {
   const name = (prompt('Enter preset name:') || '').trim();
   if (!name) return;
   const key = name.toLowerCase();
+  if (PRESET_INFO[key] || Object.values(PRESET_INFO).some(v => v[0].toLowerCase() === key)) { notify('That name belongs to a built-in preset. Choose another name.', true); return; }
   const isNew = !PRESETS[key];
-  PRESETS[key] = getSettings(false);
+  if (!isNew && !confirm(`A preset named "${name}" already exists. Replace it?`)) return;
+  const snap = getSettings(false); delete snap.text;   // like the built-in presets, never include text styling
+  PRESETS[key] = snap;
   if (isNew) { const opt = document.createElement('option'); opt.value = key; opt.textContent = name; $('presetSelect').appendChild(opt); }
   $('presetSelect').value = key;
   notify(`Preset "${name}" saved.`);
@@ -1173,6 +1220,34 @@ $('exportJsonBtn').onclick = () => {
   notify('Project settings exported (audio and images are not included).');
 };
 
+const num = (a, b) => v => { if (typeof v !== 'number' || !isFinite(v)) throw 0; return Math.min(b, Math.max(a, v)); };
+const bool = v => { if (typeof v !== 'boolean') throw 0; return v; };
+const hex = v => { if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) throw 0; return v; };
+const str = v => { if (typeof v !== 'string') throw 0; return v.slice(0, 200); };
+const oneOf = l => v => { if (!l.includes(v)) throw 0; return v; };
+const rg = id => num(+$(id).min, +$(id).max), sel = id => oneOf(Array.from($(id).options).map(o => o.value));
+const projectSchema = () => ({
+  artist: str, title: str, extra: str, main: hex, end: hex, bg: hex, bgEnd: hex, useGrad: bool, useBgGrad: bool, bgAngle: num(0, 360), overlay: bool, autoCycle: bool, cycleSpeed: rg('cycleSpeed'),
+  rainbow: { on: bool, move: bool, dir: oneOf([1, -1]), speed: rg('rbSpeed') }, mode: oneOf(MODES),
+  circ: { radius: rg('circRadius'), length: rg('circLength'), width: rg('circWidth'), count: rg('circCount'), sym: bool }, mir: { count: rg('mirCount') }, dots: { count: rg('dotsCount'), peak: bool },
+  bars: { shape: sel('barShape'), round: rg('barRound'), gap: rg('barGap') }, glow: { blur: rg('glowBlur'), bars: rg('glowBars'), cover: rg('glowCover'), text: rg('glowText') },
+  bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
+  stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
+  particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
+  text: { font: sel('textFont'), weight: sel('textWeight'), align: sel('textAlign'), size: rg('textSize'), space: rg('textSpace'), x: rg('textX'), y: rg('textY'), color: hex, match: bool, shOp: rg('textShOp'), shBlur: rg('textShBlur'), shX: rg('textShX'), shY: rg('textShY'), shColor: hex }
+});
+function cleanProject(schema, obj, path, bad) {   // keeps only valid fields (numbers clamped to the real control ranges); lists the rest in bad
+  const out = {};
+  for (const [k, rule] of Object.entries(schema)) {
+    if (obj[k] === undefined) continue;
+    try {
+      if (typeof rule === 'function') out[k] = rule(obj[k]);
+      else if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k])) out[k] = cleanProject(rule, obj[k], path + k + '.', bad);
+      else throw 0;
+    } catch (_) { bad.push(path + k); }
+  }
+  return out;
+}
 $('importJsonFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
@@ -1185,8 +1260,12 @@ $('importJsonFile').onchange = e => {
         useGrad: p.useGradient, useBgGrad: p.useBgGradient, bgAngle: p.bgAngle, mode: p.vizMode, sens: p.sens, stars: p.starCfg,
         circ: { radius: p.circRadius, count: p.circCount }
       };
-      applySettings(p);
-      notify('Project settings imported.');
+      if (p.app !== undefined && p.app !== 'nebula-visualizer') throw new Error('this is not a Nebula Visualizer project');
+      if (typeof p.version === 'number' && p.version > 2) throw new Error('it was saved by a newer version');
+      const bad = [], clean = cleanProject(projectSchema(), p, '', bad);
+      if (!Object.keys(clean).length) throw new Error('no recognised settings found');
+      applySettings(clean);   // only validated data ever reaches the live state
+      notify(bad.length ? `Project imported. Ignored invalid fields: ${bad.slice(0, 6).join(', ')}${bad.length > 6 ? '…' : ''}.` : 'Project settings imported.', bad.length > 0);
     } catch (err) { notify('Could not import that file: ' + err.message, true); }
     e.target.value = '';   // allow importing the same file again
   };
@@ -1343,8 +1422,9 @@ document.addEventListener('webkitfullscreenchange', syncFS);
 
 // Keyboard shortcuts (Space to play/pause, F for fullscreen)
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable) return;
   if (e.key === ' ') {
+    if (e.target.closest && e.target.closest('button, summary, a[href], [role=slider]')) return;   // focused controls keep their own Space action
     e.preventDefault();
     $('play').click();
   } else if (e.key.toLowerCase() === 'm') {
