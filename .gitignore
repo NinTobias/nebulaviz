@@ -1,4 +1,6 @@
 legacy/
+outputs/
+presets/
 .DS_Store
 Thumbs.db
 *.mp3
