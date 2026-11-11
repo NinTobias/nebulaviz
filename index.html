@@ -51,12 +51,16 @@
 			<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
 			<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
 			<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
+			<button class="btn" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+			<button class="btn" id="redoBtn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>↷
+				Redo</button>
 		</div>
+		<div id="songInfo" class="info" hidden></div>
 		<div class="groups">
 			<details class="group">
 				<summary>Presets & Project</summary>
 				<div class="group-body">
-					<div class="choose-bar" style="align-items: center;">
+					<div class="choose-bar">
 						<label class="btn preset-btn">Load Preset:
 							<select id="presetSelect">
 								<option value="default">Default Nebula</option>
@@ -69,6 +73,7 @@
 						<button class="btn" id="exportJsonBtn" type="button">Export JSON Project</button>
 						<label class="btn">Import JSON<input type="file" id="importJsonFile" accept=".json"></label>
 						<button class="btn" id="randomizeBtn" type="button">🎲 Randomize</button>
+						<button class="btn" id="resetBtn" type="button">Reset to defaults</button>
 					</div>
 					<div class="settings-row">
 						<label class="toggle"
@@ -324,6 +329,18 @@
 		</div>
 		<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
 	</main>
+
+	<dialog id="resetDlg">
+		<form method="dialog">
+			<h3>Reset all settings?</h3>
+			<p>Colors, modes, sliders, stars and particles go back to their defaults. Your song, cover, background image
+				and text stay as they are. You can undo this with the Undo button or Ctrl+Z.</p>
+			<div class="dlg-actions">
+				<button class="btn" value="cancel">Cancel</button>
+				<button class="btn go" value="ok">Reset</button>
+			</div>
+		</form>
+	</dialog>
 
 	<div id="toast" role="status" aria-live="polite"></div>
 
