@@ -1097,3 +1097,94 @@ input[type=color]:disabled {
     grid-column: 1 / -1
   }
 }
+/* ---- Layout: keep the preview on screen while editing settings ----
+   Wide screens: preview + song fields stay pinned on the left, the settings scroll on the right.
+   Narrower screens: the player (canvas + play bar) sticks to the top while the settings scroll beneath it. */
+@media (min-width: 1100px) and (min-height: 560px) {
+  main {
+    max-width: 1680px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(400px, 34vw, 520px);
+    gap: 0 24px;
+    align-items: start
+  }
+
+  .preview {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100dvh - 12px);
+    overflow-y: auto;
+    scrollbar-width: thin
+  }
+
+  .preview .stage:not(.fs) {
+    /* the whole pinned column (player + fields + buttons) must fit the window height */
+    width: min(100%, calc((100dvh - 300px) * 16 / 9));
+    min-width: min(100%, 480px)
+  }
+
+  .groups {
+    margin-top: 0
+  }
+
+  .preview:has(.stage.fs) {
+    z-index: 9999   /* keep full screen above the settings column */
+  }
+}
+
+@media (max-width: 1099px) and (min-height: 560px) {
+  .preview {
+    display: contents
+  }
+
+  /* the sticky bar spans the full width with a solid background (settings never show through at the sides);
+     the canvas and play bar are centred inside it and capped so the pinned player stays at roughly 40% of the window height or less */
+  .stage:not(.fs) {
+    --pw: min(100%, calc(36dvh * 16 / 9));
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a281c;
+    box-shadow: 0 10px 14px -6px #000
+  }
+
+  .stage:not(.fs) canvas {
+    width: var(--pw);
+    margin: 0 auto
+  }
+
+  .stage:not(.fs) .vbtns {
+    right: calc((100% - var(--pw)) / 2 + 12px)
+  }
+
+  /* compact play bar on a single row */
+  .stage:not(.fs) .seekrow {
+    width: var(--pw);
+    margin: 8px auto 0;
+    flex-wrap: nowrap;
+    gap: 8px
+  }
+
+  .stage:not(.fs) .round {
+    width: 36px;
+    height: 36px
+  }
+
+  .stage:not(.fs) #time {
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap
+  }
+
+  .stage:not(.fs) #seek {
+    min-width: 40px
+  }
+}
+
+/* phones: the volume slider is hidden in the pinned bar (the mute button stays) */
+@media (max-width: 700px) and (min-height: 560px) {
+  .stage:not(.fs) #vol {
+    display: none
+  }
+}
