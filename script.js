@@ -5,6 +5,15 @@ const M = {
 };
 const DTV = 1001 / 30000;
 const LEAD = 0 * 10 * DTV;
+// Frequency range group: these start at the original M values, so the default look is unchanged. applyBands() copies them into M.
+const bandCfg = { lo: M.f0, hi: M.f1, spacing: 0, tilt: M.tilt, pivot: M.fp, cap: M.cap, lowCut: -M.ltilt, smooth: M.sw, attack: M.att, decay: M.dec, floor: M.floor, gamma: M.gamma };
+const BAND_DEFAULTS = { ...bandCfg };
+let bassN = 15;   // how many of the lowest bars count as "bass" for the pulses and star boost (recomputed from the range in layout)
+// Lower edge of bar i (i = N gives the top edge). Spacing 0 = logarithmic (the original), 1 = linear; in between blends the two.
+function bandEdge(i, f1 = M.f1) {
+  const lg = M.f0 * Math.pow(f1 / M.f0, i / N), ln = M.f0 + (f1 - M.f0) * i / N;
+  return lg + (ln - lg) * bandCfg.spacing;
+}
 let sens = 1, agc = M.agcmin, asrc = null, lastT = performance.now();
 const raw = new Float32Array(N), sm2 = new Float32Array(N);
 let lo = [], hi = [], fcs = [], gains = [], hz = 1, kmax = 0, sm, amp;
@@ -149,13 +158,15 @@ function setup() {
 
 function layout() {
   hz = ctx.sampleRate / analyser.fftSize;
+  const f1 = Math.min(M.f1, ctx.sampleRate / 2 * 0.98);   // never read past the top of what the audio device can carry
   for (let i = 0; i < N; i++) {
-    const a = M.f0 * Math.pow(M.f1 / M.f0, i / N), b = M.f0 * Math.pow(M.f1 / M.f0, (i + 1) / N);
+    const a = bandEdge(i, f1), b = bandEdge(i + 1, f1);
     lo[i] = Math.floor(a / hz); hi[i] = Math.max(lo[i] + 1, Math.floor(b / hz));
     const fc = Math.sqrt(a * b); fcs[i] = fc;
     const db = fc >= M.fp ? Math.min(M.cap, M.tilt * Math.log2(fc / M.fp)) : M.ltilt * Math.log2(M.fp / fc);
     gains[i] = Math.pow(10, db / 40);
   }
+  bassN = Math.max(3, fcs.filter(f => f < 98).length);   // default range: the lowest 15 bars (up to ~98 Hz), as before
   kmax = Math.max(...hi) + 3;
   sm = new Float32Array(kmax); amp = new Float32Array(kmax);
   beatK0 = Math.max(1, Math.floor(30 / hz)); beatK1 = Math.floor(150 / hz) + 1;   // beat detector listens to 30-150 Hz
@@ -573,6 +584,18 @@ const SLIDER_INFO = {
   glowBlur:    { unit: 'px',     tip: 'How far the glow spreads, in pixels of the 1920x1080 frame. Shared by bars, cover art and text.' },
   glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars (every mode except the Ridgeline). 0% = off.' },
   glowCover:   { scale: 100, unit: '%', tip: 'Glow around the cover artwork. 0% = off.' },
+  bandLo:      { unit: 'Hz',     tip: 'Lowest frequency shown by the bars. Raise it to skip sub-bass; the bars are then spread over the remaining range.' },
+  bandHi:      { unit: 'Hz',     tip: 'Highest frequency shown by the bars. Lower it to drop the quiet top end and give the bass and mids more bars.' },
+  bandSpacing: { scale: 100, unit: '%', tip: 'How the 63 bars are spread over the range. 0% = logarithmic (every octave gets a similar share, like hearing works). 100% = linear (the treble gets many more bars).' },
+  bandTilt:    { unit: 'dB/oct', tip: 'Treble boost: extra gain for every octave above the pivot frequency, because music has far less energy up high.' },
+  bandPivot:   { unit: 'Hz',     tip: 'Frequency where the treble boost starts and the low-end cut ends.' },
+  bandCap:     { unit: 'dB',     tip: 'The most the treble boost may add, however high the frequency.' },
+  bandLowCut:  { unit: 'dB/oct', tip: 'Low-end cut: quieter bars for every octave below the pivot frequency, so sub-bass does not dominate.' },
+  bandSmooth:  { scale: 100, unit: '%', tip: 'How much each bar borrows from its two neighbours. 0% = jagged and independent, higher = smoother, rounder spectrum.' },
+  bandAttack:  { scale: 100, unit: '%', tip: 'How fast bars rise towards a louder level. 100% = instantly.' },
+  bandDecay:   { scale: 100, unit: '%', tip: 'How fast bars fall after a loud moment. Lower = longer, floatier fall.' },
+  bandFloor:   { scale: 100, unit: '%', tip: 'Noise floor: levels below this are cut to zero, so quiet background noise does not show.' },
+  bandGamma:   { unit: '×',      tip: 'Contrast. Above 1 makes quiet bars smaller and loud ones stand out; below 1 lifts the quiet parts.' },
   coverSize:   { unit: '%',      tip: 'Size of the cover. 100% is the original (192 px, or a bit under the ring radius in circular mode).' },
   coverX:      { unit: 'px',     tip: 'Moves the cover left (negative) or right (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
   coverY:      { unit: 'px',     tip: 'Moves the cover up (negative) or down (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
@@ -677,6 +700,77 @@ for (const [id, tip] of Object.entries(CONTROL_TIPS)) {
   if (lab && !lab.title) lab.title = tip;
 }
 
+// --- Frequency range: sliders, Advanced section and the draggable graph ---
+function applyBands() {
+  const B = bandCfg;
+  M.f0 = B.lo; M.f1 = B.hi; M.tilt = B.tilt; M.fp = B.pivot; M.cap = B.cap; M.ltilt = -B.lowCut;
+  M.sw = B.smooth; M.att = B.attack; M.dec = B.decay; M.floor = B.floor; M.gamma = B.gamma;
+  if (ctx && analyser) layout();   // before a song is loaded the first layout() picks these values up by itself
+  updateSliders();
+}
+Object.entries({ bandLo: 'lo', bandHi: 'hi', bandSpacing: 'spacing', bandTilt: 'tilt', bandPivot: 'pivot', bandCap: 'cap', bandLowCut: 'lowCut', bandSmooth: 'smooth', bandAttack: 'attack', bandDecay: 'decay', bandFloor: 'floor', bandGamma: 'gamma' })
+  .forEach(([id, k]) => { $(id).oninput = e => { bandCfg[k] = +e.target.value; applyBands(); }; });
+$('bandAdvBtn').onclick = () => {
+  const open = $('bandAdv').hidden;
+  $('bandAdv').hidden = !open;
+  $('bandAdvBtn').setAttribute('aria-expanded', String(open));
+  $('bandAdvBtn').textContent = open ? 'Advanced options ▾' : 'Advanced options ▸';
+};
+$('bandReset').onclick = () => { applySettings({ bands: { ...BAND_DEFAULTS } }); commitHistory(); notify('Frequency range reset to the defaults. Undo (Ctrl+Z) brings the old values back.'); };
+
+const bandGraph = $('bandGraph'), bgx = bandGraph.getContext('2d'), GF0 = 20, GF1 = 20000;
+const gx = (f, W) => Math.log(f / GF0) / Math.log(GF1 / GF0) * W;      // log frequency axis, 20 Hz .. 20 kHz
+const gf = (x, W) => GF0 * Math.pow(GF1 / GF0, x / W);
+const hzText = f => f < 1000 ? Math.round(f) + ' Hz' : (f / 1000).toFixed(f < 10000 ? 2 : 1).replace(/\.?0+$/, '') + ' kHz';
+function drawBandGraph() {
+  if (!$('bandsGroup').open) return;   // only while the group is open
+  const W = bandGraph.width, H = bandGraph.height, top = 22, bot = H - 24, ph = bot - top, c = bgx;
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  // frequency grid
+  c.font = '12px Montserrat, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  for (const f of [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]) {
+    const x = Math.min(W - 1, Math.max(1, gx(f, W)));
+    c.fillStyle = '#ffffff1f'; c.fillRect(x, top, 1, ph);
+    c.fillStyle = '#8d8a78'; c.fillText(f >= 1000 ? f / 1000 + 'k' : String(f), Math.min(W - 10, Math.max(10, x)), H - 7);
+  }
+  // the 63 bars: faint slots show where each bar sits, the live level fills them while a song plays
+  const [r, gg, b] = rgbOf(visualColor);
+  for (let i = 0; i < N; i++) {
+    const a = gx(bandEdge(i), W), e = gx(bandEdge(i + 1), W), w = Math.max(1, e - a - 1);
+    c.fillStyle = 'rgba(255,255,255,0.07)'; c.fillRect(a, top, w, ph);
+    if (playing && vals[i] > 0.005) { c.fillStyle = `rgba(${r},${gg},${b},0.9)`; const hh = vals[i] * ph; c.fillRect(a, bot - hh, w, hh); }
+  }
+  // outside the chosen range
+  const x0 = gx(M.f0, W), x1 = gx(Math.min(M.f1, GF1), W);
+  c.fillStyle = 'rgba(0,0,0,0.65)'; c.fillRect(0, top, x0, ph); c.fillRect(x1, top, W - x1, ph);
+  // handles
+  c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineWidth = 2;
+  for (const x of [x0, x1]) {
+    c.beginPath(); c.moveTo(x, top); c.lineTo(x, bot); c.stroke();
+    c.fillStyle = '#fff'; c.beginPath(); c.roundRect ? c.roundRect(x - 6, top + ph / 2 - 16, 12, 32, 4) : c.rect(x - 6, top + ph / 2 - 16, 12, 32); c.fill();
+    c.fillStyle = '#000'; c.fillRect(x - 1, top + ph / 2 - 8, 2, 16);
+  }
+  c.font = '700 12px Montserrat, sans-serif'; c.fillStyle = '#fff';
+  c.textAlign = 'left'; c.fillText(hzText(M.f0), Math.min(x0 + 8, W - 70), 14);
+  c.textAlign = 'right'; c.fillText(hzText(M.f1), Math.max(x1 - 8, 70), 14);
+}
+let bandDrag = null;
+const bandX = e => { const r = bandGraph.getBoundingClientRect(); return Math.min(bandGraph.width, Math.max(0, (e.clientX - r.left) / r.width * bandGraph.width)); };
+function setBand(id, f) {   // goes through the slider so the number box, undo history and the audio all follow
+  const el = $(id), step = +el.step, v = Math.min(+el.max, Math.max(+el.min, Math.round(f / step) * step));
+  el.value = +v.toFixed(4);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+const bandMove = e => { if (bandDrag) setBand(bandDrag, gf(bandX(e), bandGraph.width)); };
+bandGraph.addEventListener('pointerdown', e => {
+  const x = bandX(e), W = bandGraph.width;
+  bandDrag = Math.abs(x - gx(M.f0, W)) <= Math.abs(x - gx(M.f1, W)) ? 'bandLo' : 'bandHi';   // the nearer handle
+  bandGraph.setPointerCapture(e.pointerId); bandMove(e);
+});
+bandGraph.addEventListener('pointermove', bandMove);
+['pointerup', 'pointercancel'].forEach(t => bandGraph.addEventListener(t, () => { bandDrag = null; }));
+
 // Messages: toast near the bottom of the screen (always visible) + the status line
 let toastT;
 function notify(msg, err = false) {
@@ -718,7 +812,7 @@ function analyse(dt) {
     t = Math.min(1, Math.pow(t, M.gamma));
     vals[i] += (t - vals[i]) * (t > vals[i] ? ka : kd);
   }
-  let b = 0; for (let i = 0; i < 15; i++) b += vals[i]; b /= 15;
+  let b = 0; for (let i = 0; i < bassN; i++) b += vals[i]; b /= bassN;
   // Beat = a jump in the raw 30-150 Hz energy compared with its own recent average. Relative on purpose: the old fixed
   // threshold on the (auto-gained) bar heights never fired on songs whose bass sits below their mids.
   let E = 0;
@@ -1144,6 +1238,7 @@ function frame() {
   g.textAlign = 'left';
   if ('letterSpacing' in g) g.letterSpacing = '0px';
   if (expCanvas && recActive()) { expCtx.imageSmoothingQuality = 'high'; expCtx.drawImage(cv, 0, 0, expCanvas.width, expCanvas.height); }   // scaled copy for the chosen export resolution
+  drawBandGraph();
   requestAnimationFrame(frame);
 }
 
@@ -1252,7 +1347,7 @@ function getSettings(withText) {
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
-    stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }
+    stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }, bands: { ...bandCfg }
   };
 }
 function applySettings(p) {
@@ -1286,6 +1381,12 @@ function applySettings(p) {
     setCtl('textSize', tx.size); setCtl('textSpace', tx.space); setCtl('textX', tx.x); setCtl('textY', tx.y);
     setCtl('textColor', tx.color); setCtl('textMatch', tx.match);
     setCtl('textShOp', tx.shOp); setCtl('textShBlur', tx.shBlur); setCtl('textShX', tx.shX); setCtl('textShY', tx.shY); setCtl('textShColor', tx.shColor);
+  }
+  const bd = p.bands;
+  if (bd) {
+    setCtl('bandLo', bd.lo); setCtl('bandHi', bd.hi); setCtl('bandSpacing', bd.spacing);
+    setCtl('bandTilt', bd.tilt); setCtl('bandPivot', bd.pivot); setCtl('bandCap', bd.cap); setCtl('bandLowCut', bd.lowCut);
+    setCtl('bandSmooth', bd.smooth); setCtl('bandAttack', bd.attack); setCtl('bandDecay', bd.decay); setCtl('bandFloor', bd.floor); setCtl('bandGamma', bd.gamma);
   }
   const cvr = p.cover;
   if (cvr) {
@@ -1353,7 +1454,7 @@ Object.assign(PRESETS.chillwave, { bars: { shape: 'capsule' } });
 Object.assign(PRESETS.minimal, { bars: { shape: 'rounded', round: 3 } });
 function applyPreset(key) {
   const p = PRESETS[key]; if (!p) return;
-  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text; delete base.cover;   // presets never touch the text or cover styling
+  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text; delete base.cover; delete base.bands;   // presets never touch the text, cover or frequency range
   const m = { ...base, ...p };
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
@@ -1379,7 +1480,7 @@ $('savePresetBtn').onclick = () => {
   if (isBuiltIn(low) || Object.values(PRESET_INFO).some(v => v[0].toLowerCase() === low)) { notify('That name belongs to a built-in preset. Choose another name.', true); return; }
   const isNew = !Object.prototype.hasOwnProperty.call(PRESETS, key);
   if (!isNew && !confirm(`A preset named "${name}" already exists. Replace it?`)) return;
-  const snap = getSettings(false); delete snap.text; delete snap.cover;   // like the built-in presets, never include text or cover styling
+  const snap = getSettings(false); delete snap.text; delete snap.cover; delete snap.bands;   // like the built-in presets, never include text, cover or frequency range
   snap.__name = name;   // display name, so undo/redo can rebuild the dropdown
   PRESETS[key] = snap;
   if (isNew) { const opt = document.createElement('option'); opt.value = key; opt.textContent = name; $('presetSelect').appendChild(opt); }
@@ -1412,6 +1513,8 @@ const projectSchema = () => ({
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
   particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
+  bands: { lo: rg('bandLo'), hi: rg('bandHi'), spacing: rg('bandSpacing'), tilt: rg('bandTilt'), pivot: rg('bandPivot'), cap: rg('bandCap'), lowCut: rg('bandLowCut'),
+    smooth: rg('bandSmooth'), attack: rg('bandAttack'), decay: rg('bandDecay'), floor: rg('bandFloor'), gamma: rg('bandGamma') },
   cover: { on: bool, shape: sel('coverShape'), fit: sel('coverFit'), attach: bool, size: rg('coverSize'), x: rg('coverX'), y: rg('coverY'), radius: rg('coverRadius'), opacity: rg('coverOpacity'),
     bw: rg('coverBw'), bcolor: hex, bmatch: bool, shOp: rg('coverShOp'), shBlur: rg('coverShBlur'), shX: rg('coverShX'), shY: rg('coverShY'), shColor: hex, note: bool, noteColor: hex },
   text: { font: sel('textFont'), weight: sel('textWeight'), align: sel('textAlign'), size: rg('textSize'), space: rg('textSpace'), x: rg('textX'), y: rg('textY'), color: hex, match: bool, shOp: rg('textShOp'), shBlur: rg('textShBlur'), shX: rg('textShX'), shY: rg('textShY'), shColor: hex }
