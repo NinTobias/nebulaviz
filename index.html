@@ -12,51 +12,57 @@
 
 <body>
 	<main>
-		<div class="stage" id="stage">
-			<canvas id="c" width="1920" height="1080"></canvas>
-			<div class="vbtns">
-				<button class="vbtn" id="barToggle" type="button" aria-pressed="true" aria-label="Hide play bar"
-					title="Hide play bar"></button>
-				<button class="vbtn" id="fsBtn" type="button" aria-label="Full screen" title="Full screen"></button>
-			</div>
-			<div class="seekrow">
-				<button id="play" class="round" disabled aria-label="Play"></button>
-				<span id="time">0:00.0 / 0:00.0</span>
-				<input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled aria-label="Song position">
-				<div class="volume">
-					<button class="vbtn" id="muteBtn" type="button" aria-label="Mute" title="Mute (M)"></button>
-					<input type="range" id="vol" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+		<div class="preview">
+			<div class="stage" id="stage">
+				<canvas id="c" width="1920" height="1080"></canvas>
+				<div class="vbtns">
+					<button class="vbtn" id="barToggle" type="button" aria-pressed="true" aria-label="Hide play bar"
+						title="Hide play bar"></button>
+					<button class="vbtn" id="fsBtn" type="button" aria-label="Full screen" title="Full screen"></button>
 				</div>
-				<button class="vbtn" id="snapshotBtn" type="button" aria-label="Save screenshot"
-					title="Save screenshot (PNG)">
-					<svg viewBox="0 0 24 24">
-						<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-						<circle cx="12" cy="13" r="4" />
-					</svg>
-				</button>
-				<button class="vbtn" id="recBtn" type="button" aria-label="Export Video (WebM/MP4)"
-					title="Export Video (WebM/MP4)">
-					<svg viewBox="0 0 24 24">
-						<polygon points="23 7 16 12 23 17 23 7" />
-						<rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-					</svg>
-				</button>
+				<div class="seekrow">
+					<button id="play" class="round" disabled aria-label="Play"></button>
+					<span id="time">0:00.0 / 0:00.0</span>
+					<input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled
+						aria-label="Song position">
+					<div class="volume">
+						<button class="vbtn" id="muteBtn" type="button" aria-label="Mute" title="Mute (M)"></button>
+						<input type="range" id="vol" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+					</div>
+					<button class="vbtn" id="snapshotBtn" type="button" aria-label="Save screenshot"
+						title="Save screenshot (PNG)">
+						<svg viewBox="0 0 24 24">
+							<path
+								d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+							<circle cx="12" cy="13" r="4" />
+						</svg>
+					</button>
+					<button class="vbtn" id="recBtn" type="button" aria-label="Export Video (WebM/MP4)"
+						title="Export Video (WebM/MP4)">
+						<svg viewBox="0 0 24 24">
+							<polygon points="23 7 16 12 23 17 23 7" />
+							<rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+						</svg>
+					</button>
+				</div>
 			</div>
+			<div class="bar">
+				<label>Artist<input type="text" id="artist" value="Artist" placeholder="Artist"></label>
+				<label>Song title<input type="text" id="title" value="Song Title" placeholder="Song title"></label>
+				<label>Extra info<input type="text" id="extra" value=""
+						placeholder="(Feat. other), (VIP Mix), ..."></label>
+			</div>
+			<div class="choose-bar">
+				<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
+				<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
+				<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
+				<button class="btn" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+				<button class="btn" id="redoBtn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>↷
+					Redo</button>
+			</div>
+			<div id="songInfo" class="info" hidden></div>
+			<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
 		</div>
-		<div class="bar">
-			<label>Artist<input type="text" id="artist" value="Artist" placeholder="Artist"></label>
-			<label>Song title<input type="text" id="title" value="Song Title" placeholder="Song title"></label>
-			<label>Extra info<input type="text" id="extra" value="" placeholder="(Feat. other), (VIP Mix), ..."></label>
-		</div>
-		<div class="choose-bar">
-			<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
-			<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
-			<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
-			<button class="btn" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
-			<button class="btn" id="redoBtn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>↷
-				Redo</button>
-		</div>
-		<div id="songInfo" class="info" hidden></div>
 		<div class="groups">
 			<details class="group">
 				<summary>Presets & Project</summary>
@@ -599,7 +605,6 @@
 				</div>
 			</details>
 		</div>
-		<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
 	</main>
 
 	<dialog id="resetDlg">
