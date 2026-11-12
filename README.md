@@ -14,17 +14,19 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic
 
 ## Contents
 
-- [Overview](#overview)
-- [Quick start](#quick-start)
-- [Visualizer modes](#visualizer-modes)
-- [Settings reference](#settings-reference)
-- [Presets, projects and history](#presets-projects-and-history)
-- [Output: screenshots and video](#output-screenshots-and-video)
-- [Shortcuts and drag & drop](#shortcuts-and-drag--drop)
-- [How it works](#how-it-works)
-- [Browser support and limits](#browser-support-and-limits)
-- [Project structure](#project-structure)
-- [Notes](#notes)
+- [Nebula Visualizer](#nebula-visualizer)
+  - [Contents](#contents)
+  - [Overview](#overview)
+  - [Quick start](#quick-start)
+  - [Visualizer modes](#visualizer-modes)
+  - [Settings reference](#settings-reference)
+  - [Presets, projects and history](#presets-projects-and-history)
+  - [Output: screenshots and video](#output-screenshots-and-video)
+  - [Shortcuts and drag \& drop](#shortcuts-and-drag--drop)
+  - [How it works](#how-it-works)
+  - [Browser support and limits](#browser-support-and-limits)
+  - [Project structure](#project-structure)
+  - [Notes](#notes)
 
 ## Overview
 
@@ -144,8 +146,8 @@ A shared **Blur radius** plus separate strengths for **Bars**, **Cover art** and
 
 | Group | Controls |
 | --- | --- |
-| Stars | Density (20–600), speed, bass boost, light up on beat with intensity, color (white, main, gradient or rainbow) |
-| Particle bursts | Beat sensitivity, amount per beat, size, speed |
+| Stars | Density (20–1200), speed, bass boost, light up on beat with intensity, color (white, main, gradient or rainbow) |
+| Particle bursts | Beat sensitivity, amount per beat (5–300), size, speed |
 | Direction | One dial sets the direction stars fly and particles drift |
 
 Stars and particles freeze while a loaded song is paused, so a recording resumes exactly where it left off.
