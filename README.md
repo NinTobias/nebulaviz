@@ -22,6 +22,7 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic
   - [Settings reference](#settings-reference)
   - [Presets, projects and history](#presets-projects-and-history)
     - [Song tags (ID3)](#song-tags-id3)
+  - [Playlists](#playlists)
   - [Output: screenshots and video](#output-screenshots-and-video)
   - [Shortcuts and drag \& drop](#shortcuts-and-drag--drop)
   - [How it works](#how-it-works)
@@ -45,6 +46,7 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 - An adjustable frequency range with a draggable graph, plus advanced tone and response controls
 - A styleable cover (shape, size, position, border, shadow, opacity) and fully styleable text (font, weight, alignment, shadow)
 - Glow effects, a star field and particle bursts, with direction control
+- Playlists: choose several songs, queue more or play one next, and move through them with Previous and Next
 - Presets, JSON projects, randomize, reset, and 100-step undo/redo
 - PNG screenshots and WebM/MP4 video export up to 4K
 - Full-screen mode, a hideable play bar, and a responsive layout for desktop and mobile. The preview stays pinned while you scroll through the settings
@@ -213,6 +215,20 @@ When you load an MP3 (or any file with ID3v1 or ID3v2.2 / 2.3 / 2.4 tags), Nebul
 - Your own choices win: a cover you picked yourself is never replaced, and an artist you typed over is kept. Tag-filled values are replaced when you load the next song.
 - Filling the fields is one undo step. Other formats (FLAC, Ogg, M4A) play fine but their tags are not read yet.
 
+## Playlists
+
+Choose several songs at once with **Choose song** (or drop them on the page) and they become the playlist, played in order. The **Playlist** panel shows the queue; click a track to play it, or <kbd>✕</kbd> to remove it.
+
+- **Previous / Next** buttons beside the play button, or the <kbd>P</kbd> and <kbd>N</kbd> keys. Previous restarts the song if it has played for more than 3 seconds or is on the first track.
+- **Add to queue** appends songs to the end. **Play next** inserts them right after the playing track.
+- **Play the next track automatically** (on by default) starts the following track when one ends. **Repeat the queue** wraps back to the first track after the last one.
+- Skipping while paused selects the track without playing it.
+- Only the playing track is decoded and held in memory, so a long playlist uses no more memory than a single song. Each track has the same length limit as a single song.
+- Each new track updates the artist, title and cover from its ID3 tags, as for a single song. A cover or artist you typed yourself is kept.
+- Video recording ends when a track ends or changes; start a new recording for the next track.
+- The queue is not part of undo/redo, and it is not saved in project files (JSON projects hold settings only).
+- The demo track is not part of the playlist.
+
 ## Output: screenshots and video
 
 **Screenshot:** the camera button saves the current frame as a PNG.
@@ -238,6 +254,7 @@ When you load an MP3 (or any file with ID3v1 or ID3v2.2 / 2.3 / 2.4 tags), Nebul
 | --- | --- |
 | <kbd>Space</kbd> | Play / pause |
 | <kbd>M</kbd> | Mute / unmute |
+| <kbd>N</kbd> / <kbd>P</kbd> | Next / previous track in the playlist |
 | <kbd>F</kbd> | Full screen (<kbd>Esc</kbd> exits the fallback full-screen mode) |
 | <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd> | Undo |
 | <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Y</kbd> or <kbd>Shift</kbd> + <kbd>Z</kbd> | Redo |
@@ -278,8 +295,9 @@ flowchart LR
 | `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art). A plain script with no dependencies |
 | `demo.js` | Synthesizer for the built-in demo track. A plain script with no dependencies |
 | `style.css` | Layout, theming and visual styling |
-| `script.js` | Audio analysis, rendering, presets, export/import and visualizer behavior |
-| `tests/` | Node tests for the ID3 reader, the demo synth and the font tool. Run `npm test` (Node 20+; nothing to install) |
+| `queue.js` | Playlist order logic (next, previous, insert, remove). A plain script with no dependencies |
+| `script.js` | Audio analysis, rendering, presets, export/import, playlist and visualizer behavior |
+| `tests/` | Node tests for the ID3 reader, the demo synth, the playlist logic and the font tool. Run `npm test` (Node 20+; nothing to install) |
 | `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` for self-hosting (`npm run fonts`) |
 | `fonts/` | Created by the font tool; not in the repository until you run it |
 
