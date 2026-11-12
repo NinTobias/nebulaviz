@@ -22,7 +22,20 @@
 					<button class="vbtn" id="fsBtn" type="button" aria-label="Full screen" title="Full screen"></button>
 				</div>
 				<div class="seekrow">
+					<button class="vbtn skip" id="prevBtn" type="button" aria-label="Previous track"
+						title="Previous track (P). After 3 seconds, or on the first track, it restarts the song"
+						disabled>
+						<svg viewBox="0 0 24 24">
+							<path d="M6 6h2v12H6zM18 6v12L7.5 12z" />
+						</svg>
+					</button>
 					<button id="play" class="round" disabled aria-label="Play"></button>
+					<button class="vbtn skip" id="nextBtn" type="button" aria-label="Next track" title="Next track (N)"
+						disabled>
+						<svg viewBox="0 0 24 24">
+							<path d="M16 6h2v12h-2zM6 6v12l10.5-6z" />
+						</svg>
+					</button>
 					<span id="time">0:00.0 / 0:00.0</span>
 					<input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled
 						aria-label="Song position">
@@ -54,7 +67,8 @@
 						placeholder="(Feat. other), (VIP Mix), ..."></label>
 			</div>
 			<div class="choose-bar">
-				<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
+				<label class="btn" title="Choose one or more songs. They become the playlist, played in order">Choose
+					song<input type="file" id="song" accept="audio/*" multiple></label>
 				<button class="btn" id="demoBtn" type="button"
 					title="Plays a short built-in tune, so you can try the visualizer without a song">▶ Try
 					demo</button>
@@ -98,6 +112,29 @@
 							title="Applies a random color and layout look each time you choose a new song"><input
 								type="checkbox" id="presetRandomize"> Randomize look when a new song loads</label>
 					</div>
+				</div>
+			</details>
+			<details class="group" id="playlistGroup" open>
+				<summary>Playlist</summary>
+				<div class="group-body">
+					<div class="choose-bar">
+						<label class="btn" title="Appends songs to the end of the queue">Add to queue<input type="file"
+								id="queueAdd" accept="audio/*" multiple></label>
+						<label class="btn" title="Inserts songs right after the playing track">Play next<input
+								type="file" id="queueNext" accept="audio/*" multiple></label>
+						<button class="btn" id="queueClear" type="button" disabled>Clear queue</button>
+					</div>
+					<div class="settings-row">
+						<label class="toggle"><input type="checkbox" id="queueAuto" checked> Play the next track
+							automatically</label>
+						<label class="toggle"><input type="checkbox" id="queueLoop"> Repeat the queue</label>
+					</div>
+					<div class="queue-count" id="queueCount"></div>
+					<ol class="queue-list" id="queueList" aria-label="Queue"></ol>
+					<div class="hint" id="queueHint">Choose several songs (or drop them on the page) to play them in
+						order. Use Add to queue to append, Play next to insert after the playing track. Previous and
+						Next move through the list; keys P and N do the same. Songs are decoded one at a time, so a long
+						playlist uses no more memory than a single song.</div>
 				</div>
 			</details>
 			<details class="group" open>
@@ -659,6 +696,7 @@
 
 	<script src="id3.js"></script>
 	<script src="demo.js"></script>
+	<script src="queue.js"></script>
 	<script src="script.js"></script>
 </body>
 

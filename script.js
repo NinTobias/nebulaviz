@@ -182,7 +182,7 @@ function startAt(off) {
   setup();
   stopAll();
   src = ctx.createBufferSource(); src.buffer = buf; src.connect(outGain);
-  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); parts.length = 0; stopRecording('Song ended. Video saved.'); } };
+  src.onended = () => { if (playing) { playing = false; offset = 0; icon(false); vals.fill(0); parts.length = 0; stopRecording('Song ended. Video saved.'); advanceAfterEnd(); } };
   src.start(0, off);
   asrc = null;
   if (off + LEAD < buf.duration) { asrc = ctx.createBufferSource(); asrc.buffer = buf; asrc.connect(analyser); asrc.start(0, off + LEAD); }
@@ -229,34 +229,139 @@ function installSong(decoded, { gen, title, label, size, tags = {} }) {
   commitHistory();
 }
 
-$('song').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  const gen = ++loadGen;
+// --- Songs and playlist ---
+// The queue is a list of files, not decoded audio: only the playing track is held in memory, so a long playlist costs no extra RAM.
+let queue = [], queueIdx = -1;             // queueIdx = the playing track in the queue, -1 when the song is not from the queue
+let playlistLoop = false, playlistAuto = true;   // repeat the whole queue / go on to the next track by itself
+const isAudioFile = f => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name);
+const titleFromName = name => name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
+
+// Decode queue[i] into the song slot, optionally starting playback. Returns false (after telling the user why) when it could not be loaded.
+async function loadTrack(i, autoplay) {
+  const entry = queue[i]; if (!entry) return false;
+  const f = entry.file, gen = ++loadGen;
   const est = estimateDecodedBytes(f), limit = audioMemoryLimit();
+  // Decoded audio lives in memory as 32-bit floats: a very long file would exhaust the browser's memory, so it is refused up front
   if (est > limit) {
     notify(`"${f.name}" is too long to load safely: it would need roughly ${fmtMB(est)} of memory once decoded, and this browser allows about ${fmtMB(limit)}. Try a shorter or smaller file.${buf ? ' Your previous song is still loaded.' : ''}`, true);
-    return;
+    return false;
   }
   setup();
   const prevStatus = $('status').textContent;
-  $('status').textContent = est > limit * 0.4 ? 'Decoding a large audio file, this can take a moment…' : 'Decoding audio…';
+  $('status').textContent = queue.length > 1 ? `Loading ${i + 1} of ${queue.length}: ${f.name}…`
+    : est > limit * 0.4 ? 'Decoding a large audio file, this can take a moment…' : 'Decoding audio…';
   try {
     const ab = await f.arrayBuffer();
     const tags = readID3(ab);   // read before decoding: decodeAudioData may detach the buffer
     const decoded = await ctx.decodeAudioData(ab);
-    if (gen !== loadGen) return;   // a newer selection started: drop this stale result
-    installSong(decoded, { gen, title: f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, ''), label: f.name, size: f.size, tags });
+    if (gen !== loadGen) return false;   // a newer selection started: drop this stale result
+    installSong(decoded, { gen, title: titleFromName(f.name), label: f.name, size: f.size, tags });
+    queueIdx = queue.indexOf(entry);
+    renderQueue();
+    if (autoplay) {
+      await ctx.resume();
+      startAt(0);
+      recSync();
+      $('status').textContent = `Now playing: ${f.name}`;
+    }
+    return true;
   } catch (err) {
-    if (gen !== loadGen) return;
+    if (gen !== loadGen) return false;
     $('status').textContent = buf ? prevStatus : 'No song loaded.';   // failed replacement: the previous song and its status stay as they were
     console.error('Audio decode failed:', { name: f.name, type: f.type || '(unknown)', size: f.size }, err);
     notify(`Could not decode "${f.name}" (${f.type || 'unknown type'}${err && err.message ? ': ' + err.message : ''}). ${buf ? 'Your previous song is still loaded.' : 'No song is loaded.'} Supported formats depend on your browser.${f.size > 30 * 1048576 ? ' Very long files can also run out of memory.' : ''}`, true);
+    return false;
   }
-};
+}
 
-// Built-in demo: a short synthesized tune (see demo.js), so the visualizer can be tried without a file
+// Skip, click on a track: stops the current audio at once (so nothing plays over the decode), then plays the target if the song was playing
+function skipTo(i) {
+  const wasPlaying = playing;
+  stopAll(); playing = false; offset = 0; icon(false); vals.fill(0); parts.length = 0;
+  recSync();
+  loadTrack(i, wasPlaying);
+}
+
+// A track played to its end: go on to the next one if the playlist says so (the stop bookkeeping has already run)
+function advanceAfterEnd() {
+  if (!playlistAuto) return;
+  const n = queueNextIndex(queue.length, queueIdx, playlistLoop);
+  if (n >= 0) loadTrack(n, true);
+}
+
+function restartSong() { if (playing) startAt(0); else { offset = 0; ui(); } }
+function nextTrack() {
+  const n = queueNextIndex(queue.length, queueIdx, playlistLoop);
+  if (buf && n >= 0) skipTo(n);
+}
+function prevTrack() {
+  if (!buf) return;
+  const p = queuePrevIndex(queue.length, queueIdx, playlistLoop);
+  // like a CD player: after 3 seconds, or on the first track, Previous restarts the song instead of going back
+  if (cur() > 3 || p < 0) restartSong(); else skipTo(p);
+}
+
+// Choose song / drop audio on the page: the chosen files replace the queue and the first one is loaded
+function setQueue(files) {
+  queue = files.map(file => ({ file, name: file.name })); queueIdx = -1;
+  renderQueue();
+  loadTrack(0, false);
+}
+// Add to queue (mode 'end') or Play next (mode 'next'); when no song is loaded yet, the first new file is loaded
+function addToQueue(files, mode) {
+  const at = mode === 'next' ? queueInsertIndex(queue.length, queueIdx) : queue.length;
+  queue.splice(at, 0, ...files.map(file => ({ file, name: file.name })));
+  if (queueIdx >= at) queueIdx += files.length;   // the playing track moves along with the list
+  renderQueue();
+  if (!buf) loadTrack(at, false);
+}
+function removeFromQueue(i) {
+  queue.splice(i, 1);
+  queueIdx = queueIndexAfterRemove(queueIdx, i);   // removing the playing track keeps the audio going, detached from the list
+  renderQueue();
+}
+function clearQueue() { queue = []; queueIdx = -1; renderQueue(); }
+
+function syncQueueUI() {
+  $('prevBtn').disabled = !buf;
+  $('nextBtn').disabled = !buf || queueNextIndex(queue.length, queueIdx, playlistLoop) < 0;
+  $('queueClear').disabled = !queue.length;
+}
+function renderQueue() {
+  const list = $('queueList');
+  list.innerHTML = '';
+  queue.forEach((t, i) => {
+    const li = document.createElement('li');
+    li.className = 'queue-row' + (i === queueIdx ? ' now' : '');
+    const play = document.createElement('button');
+    play.type = 'button'; play.className = 'queue-name'; play.textContent = `${i + 1}. ${t.name}`; play.title = 'Play this track';
+    play.onclick = () => skipTo(i);
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'queue-rm'; rm.textContent = '✕'; rm.title = 'Remove from the queue';
+    rm.setAttribute('aria-label', `Remove ${t.name} from the queue`);
+    rm.onclick = () => removeFromQueue(i);
+    li.append(play, rm);
+    list.append(li);
+  });
+  $('queueHint').hidden = queue.length > 0;
+  $('queueCount').textContent = queue.length ? `${queue.length} track${queue.length > 1 ? 's' : ''} in the queue` : '';
+  syncQueueUI();
+}
+renderQueue();
+
+$('song').onchange = e => { const files = Array.from(e.target.files); e.target.value = ''; if (files.length) setQueue(files); };
+$('queueAdd').onchange = e => { const files = Array.from(e.target.files); e.target.value = ''; if (files.length) addToQueue(files, 'end'); };
+$('queueNext').onchange = e => { const files = Array.from(e.target.files); e.target.value = ''; if (files.length) addToQueue(files, 'next'); };
+$('queueClear').onclick = clearQueue;
+$('queueAuto').onchange = e => { playlistAuto = e.target.checked; };
+$('queueLoop').onchange = e => { playlistLoop = e.target.checked; syncQueueUI(); };
+$('prevBtn').onclick = prevTrack;
+$('nextBtn').onclick = nextTrack;
+
+// Built-in demo: a short synthesized tune (see demo.js), so the visualizer can be tried without a file. It is not part of the queue.
 $('demoBtn').onclick = async () => {
   const gen = ++loadGen;
+  queue = []; queueIdx = -1; renderQueue();
   setup();
   try {
     await ctx.resume();
@@ -1782,15 +1887,20 @@ document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault()
 document.addEventListener('drop', e => {
   if (!hasFiles(e)) return;
   e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
-  const grp = e.target.closest && e.target.closest('.group'), toBg = !!grp && grp.contains($('backgroundImage'));
-  const used = new Set();
-  for (const f of e.dataTransfer.files) {
-    const kind = (f.type.startsWith('audio/') || AUDIO_EXT.test(f.name)) ? 'song' : f.type.startsWith('image/') ? (toBg ? 'backgroundImage' : 'cover') : /\.json$/i.test(f.name) ? 'importJsonFile' : null;
-    if (!kind || used.has(kind)) continue;   // first file of each kind wins
-    used.add(kind);
+  const grp = e.target.closest && e.target.closest('.group'), toBg = !!grp && grp.contains($('backgroundImage')), toPlaylist = !!grp && grp.id === 'playlistGroup';
+  const files = Array.from(e.dataTransfer.files);
+  const audio = files.filter(isAudioFile);
+  if (audio.length) { if (toPlaylist) addToQueue(audio, 'end'); else setQueue(audio); }   // all dropped songs form the queue
+  let imageUsed = false, jsonUsed = false;
+  for (const f of files) {
+    if (isAudioFile(f)) continue;
+    const kind = f.type.startsWith('image/') ? (toBg ? 'backgroundImage' : 'cover') : /\.json$/i.test(f.name) ? 'importJsonFile' : null;
+    if (!kind) continue;
+    if (kind === 'importJsonFile' ? jsonUsed : imageUsed) continue;   // first file of each kind wins
+    if (kind === 'importJsonFile') jsonUsed = true; else imageUsed = true;
     const dt = new DataTransfer(); dt.items.add(f); $(kind).files = dt.files; $(kind).dispatchEvent(new Event('change'));
   }
-  if (!used.size) notify('Drop an audio file, an image or a project .json file.', true);
+  if (!audio.length && !imageUsed && !jsonUsed) notify('Drop audio files, an image or a project .json file.', true);
 });
 
 // --- Keyboard Shortcuts & Fullscreen ---
@@ -1849,6 +1959,10 @@ document.addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('button, summary, a[href], [role=slider]')) return;   // focused controls keep their own Space action
     e.preventDefault();
     $('play').click();
+  } else if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
+    nextTrack();
+  } else if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.metaKey) {
+    prevTrack();
   } else if (e.key.toLowerCase() === 'm') {
     $('muteBtn').click();
   } else if (e.key.toLowerCase() === 'f') {
