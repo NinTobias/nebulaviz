@@ -43,7 +43,7 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 - Glow effects, a star field and particle bursts, with direction control
 - Presets, JSON projects, randomize, reset, and 100-step undo/redo
 - PNG screenshots and WebM/MP4 video export up to 4K
-- Full-screen mode, a hideable play bar, and a responsive layout for desktop and mobile
+- Full-screen mode, a hideable play bar, and a responsive layout for desktop and mobile. The preview stays pinned while you scroll through the settings
 
 ## Quick start
 
