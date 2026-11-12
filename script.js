@@ -391,11 +391,12 @@ function syncFields(prefix, hex) {
   ['R', 'G', 'B'].forEach((c, i) => set(prefix + c, v[i]));
 }
 function bindFields(which) {
-  const prefix = PREFIX[which], st = pickerState[which];
-  const current = () => st.hex || hsvToHex(st.h, st.s, st.v);
+  const prefix = PREFIX[which];
+  const current = () => { const st = pickerState[which]; return st.hex || hsvToHex(st.h, st.s, st.v); };
   const apply = (r, gr, b) => {
     const hex = '#' + [r, gr, b].map(x => x.toString(16).padStart(2, '0')).join('');
     const hsv = hexToHsv(hex);
+    const st = pickerState[which];
     if (hsv.v === 0) { hsv.h = st.h; hsv.s = st.s; } else if (hsv.s === 0) hsv.h = st.h;
     Object.assign(st, hsv, { hex });
     updatePicker(which);
@@ -952,7 +953,7 @@ function frame() {
       g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
       g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
       g.restore();
-      olStroke(rp.curve, 4.5 + 1.5 * fade, fade);
+      olStroke(rp.curve, 3 + 1.5 * fade, fade);
       g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
       g.restore();
     };
@@ -980,9 +981,15 @@ function frame() {
     const sq = Math.min(coverImg.width, coverImg.height);
     g.drawImage(coverImg, (coverImg.width - sq) / 2, (coverImg.height - sq) / 2, sq, sq, cx, cy, cs, cs);
   } else {
-    g.fillStyle = coverGradient; g.fillRect(cx, cy, cs, cs);
-    g.fillStyle = '#fff';
+    let cf = coverGradient;
+    if (rainbow) { cf = g.createLinearGradient(cx, cy, cx + cs, cy + cs); for (let k = 0; k <= 12; k++) cf.addColorStop(k / 12, `hsl(${(rbOffset + k * 30) % 360} 100% 55%)`); }
+    g.fillStyle = cf; g.fillRect(cx, cy, cs, cs);
+    const cp = new Path2D(); cp.rect(cx, cy, cs, cs); olStroke(cp, 4);   // same contrast outline as the bars when the cover blends into the background
+    // the note stays white (the original look) but gets a dark edge when white would be hard to read on the cover colors
+    const noteOL = rainbow ? 0 : needOL(Math.min(crOf('#ffffff', c1), crOf('#ffffff', c2)));
     g.font = `800 ${cs * 0.573}px Montserrat`; g.textAlign = 'center';
+    if (noteOL > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = noteOL; g.strokeStyle = '#000'; g.lineWidth = Math.max(3, cs * 0.035); g.lineJoin = 'round'; g.strokeText('♪', cx + cs / 2, cy + cs * 0.703); g.restore(); }
+    g.fillStyle = '#fff';
     g.fillText('♪', cx + cs / 2, cy + cs * 0.703); g.textAlign = 'left';
   }
   g.restore();
@@ -995,10 +1002,12 @@ function frame() {
   const algn = T.align === 'auto' ? (circ ? 'center' : 'left') : T.align;
   const ax = (circ ? { left: X0, center: CIRC_CX, right: X1 } : { left: 403, center: (403 + X1) / 2, right: X1 })[algn] + T.x;
   const yy = circ ? (three ? [925, 975, 1025] : [945, 1005]) : (three ? [666, 716, 762] : [698, 753]);   // baselines of the original layout
-  const lineY = i => yy[0] + (yy[i] - yy[0]) * ts + T.y;                                                  // spacing between lines grows with the size
+  const lineY0 = i => yy[0] + (yy[i] - yy[0]) * ts;                                                       // spacing between lines grows with the size
+  const yShift = circ ? Math.min(0, 1062 - lineY0(three ? 2 : 1)) : 0;                                     // circular: big text must not run off the bottom (the Y offset below can still move it)
+  const lineY = i => lineY0(i) + yShift + T.y;
   const sp = T.space / 100, shRGB = rgbOf(T.shColor);
   g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
-  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // (rainbow text is judged with the rainbow samples via ol)   // text outline only when the text would be hard to read
+  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read (rainbow text is judged via ol)
   const drawLine = (txt, y) => {
     let drawn = false;
     if (tol > 0) { g.save(); g.globalAlpha = tol; g.lineJoin = 'round'; if (twoTone) { g.strokeStyle = '#fff'; g.lineWidth = 10; g.strokeText(txt, ax, y); } g.strokeStyle = olCol; g.lineWidth = 6; g.strokeText(txt, ax, y); g.restore(); }
@@ -1112,7 +1121,7 @@ function setCtl(id, v) {   // set a control and fire its normal handler
 }
 function setPickerHex(which, hex) {
   if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
-  pickerState[which] = Object.assign(hexToHsv(hex), { hex: hex.toLowerCase() });
+  Object.assign(pickerState[which], hexToHsv(hex), { hex: hex.toLowerCase() });   // in place: the hex / RGB fields hold a reference to this object
   updatePicker(which);
 }
 const wrapDeg = a => ((a % 360) + 360) % 360;
@@ -1223,25 +1232,26 @@ function applyPreset(key) {
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
   commitHistory();
-  notify(PRESET_INFO[key] ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.');
+  notify(isBuiltIn(key) ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.');
 }
 $('presetSelect').onchange = e => applyPreset(e.target.value);
 
 // custom presets = everything in PRESETS that is not built in; they are part of every undo step
-const customPresets = () => Object.fromEntries(Object.entries(PRESETS).filter(([k]) => !PRESET_INFO[k]));
+const isBuiltIn = k => Object.prototype.hasOwnProperty.call(PRESET_INFO, k);
+const customPresets = () => Object.fromEntries(Object.entries(PRESETS).filter(([k]) => !isBuiltIn(k)));
 function restoreCustomPresets(saved) {
   const sel = $('presetSelect'), cur = sel.value;
-  Object.keys(PRESETS).forEach(k => { if (!PRESET_INFO[k]) delete PRESETS[k]; });
-  Array.from(sel.options).forEach(o => { if (!PRESET_INFO[o.value]) o.remove(); });
+  Object.keys(PRESETS).forEach(k => { if (!isBuiltIn(k)) delete PRESETS[k]; });
+  Array.from(sel.options).forEach(o => { if (!isBuiltIn(o.value)) o.remove(); });
   Object.entries(saved).forEach(([k, v]) => { PRESETS[k] = v; sel.add(new Option(v.__name || k, k)); });
   sel.value = PRESETS[cur] ? cur : Object.keys(PRESET_INFO)[0];
 }
 $('savePresetBtn').onclick = () => {
-  const name = (prompt('Enter preset name:') || '').trim();
+  const name = (prompt('Enter preset name (max 40 characters):') || '').trim().slice(0, 40);
   if (!name) return;
-  const key = name.toLowerCase();
-  if (PRESET_INFO[key] || Object.values(PRESET_INFO).some(v => v[0].toLowerCase() === key)) { notify('That name belongs to a built-in preset. Choose another name.', true); return; }
-  const isNew = !PRESETS[key];
+  const low = name.toLowerCase(), key = 'u:' + low;   // prefix: a user name can never collide with a built-in key or an Object property
+  if (isBuiltIn(low) || Object.values(PRESET_INFO).some(v => v[0].toLowerCase() === low)) { notify('That name belongs to a built-in preset. Choose another name.', true); return; }
+  const isNew = !Object.prototype.hasOwnProperty.call(PRESETS, key);
   if (!isNew && !confirm(`A preset named "${name}" already exists. Replace it?`)) return;
   const snap = getSettings(false); delete snap.text;   // like the built-in presets, never include text styling
   snap.__name = name;   // display name, so undo/redo can rebuild the dropdown
@@ -1390,7 +1400,7 @@ $('resetDlg').addEventListener('close', () => {
   const d = { ...DEFAULTS }; delete d.artist; delete d.title; delete d.extra;
   applySettings(d);
   commitHistory();
-  notify('Settings reset to defaults. Undo (Ctrl+Z) brings them back.');
+  notify('Settings reset to defaults (your cover and background images are kept). Undo (Ctrl+Z) brings the old look back.');
 });
 syncHistUI();
 
