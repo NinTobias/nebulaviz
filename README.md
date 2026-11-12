@@ -21,6 +21,7 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic
   - [Visualizer modes](#visualizer-modes)
   - [Settings reference](#settings-reference)
   - [Presets, projects and history](#presets-projects-and-history)
+    - [Song tags (ID3)](#song-tags-id3)
   - [Output: screenshots and video](#output-screenshots-and-video)
   - [Shortcuts and drag \& drop](#shortcuts-and-drag--drop)
   - [How it works](#how-it-works)
@@ -47,8 +48,8 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 ## Quick start
 
 1. Open the live demo, or open `index.html` locally in a browser. No build step or server is needed.
-2. Click **Choose song** and pick an audio file (see [limits](#browser-support-and-limits)).
-3. Optionally choose a cover image and edit the **Artist**, **Song title** and **Extra info** fields.
+2. Click **Choose song** and pick an audio file (see [limits](#browser-support-and-limits)). Artist, title and embedded cover art are filled in automatically when the file has [ID3 tags](#song-tags-id3).
+3. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
 4. Press play (<kbd>Space</kbd>) and choose a mode in the **Visualizer** panel.
 5. Tweak colors, cover, text, glow and stars to match the track.
 6. Save a preset, export a project, or capture a screenshot or video.
@@ -196,6 +197,16 @@ When your colors are too close to the background, an outline in the opposite ton
 
 > [!NOTE]
 > Presets leave the text, cover and frequency range alone, so switching looks never changes your layout. Reset to defaults does restore them.
+
+### Song tags (ID3)
+
+When you load an MP3 (or any file with ID3v1 or ID3v2.2 / 2.3 / 2.4 tags), Nebula reads the tags locally in your browser:
+
+- **Title** and **Artist** fill the text fields. Without a title tag the file name is used, as before.
+- **Album, year, track number and genre** appear in the info line under the song controls.
+- **Embedded cover art** (the front cover when there are several) becomes the cover.
+- Your own choices win: a cover you picked yourself is never replaced, and an artist you typed over is kept. Tag-filled values are replaced when you load the next song.
+- Filling the fields is one undo step. Other formats (FLAC, Ogg, M4A) play fine but their tags are not read yet.
 
 ## Output: screenshots and video
 
