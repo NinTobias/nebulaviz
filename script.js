@@ -19,6 +19,23 @@ let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLengt
 let barShape = 'rect', barRound = 4, barGap = 7, glowBlur = 24, glowBars = 0, glowCover = 0, glowText = 0;
 const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
 const textCfg = { font: 'montserrat', weight: 'default', size: 100, space: 0, align: 'auto', x: 0, y: 0, color: '#ffffff', match: false, shOp: 0, shBlur: 8, shX: 3, shY: 3, shColor: '#000000' };
+const coverCfg = { on: true, shape: 'square', fit: 'crop', size: 100, x: 0, y: 0, radius: 15, opacity: 1, attach: true, bw: 0, bcolor: '#ffffff', bmatch: false, shOp: 0, shBlur: 12, shX: 0, shY: 6, shColor: '#000000', note: true, noteColor: '#ffffff' };
+const coverBuf = document.createElement('canvas'), bx = coverBuf.getContext('2d');   // the cover is drawn here first (clipped to its shape), then composited with opacity / shadow / glow
+function coverShapePath(x, y, s) {   // outline of the cover in its current shape, at (x, y) with side s
+  const p = new Path2D(), sh = coverCfg.shape;
+  if (sh === 'circle') p.arc(x + s / 2, y + s / 2, s / 2, 0, 6.283185);
+  else if (sh === 'squircle') {   // superellipse |x|^4 + |y|^4 = 1
+    const h = s / 2, K = 96;
+    for (let i = 0; i < K; i++) {
+      const t = i / K * 6.283185, c = Math.cos(t), n = Math.sin(t);
+      const px = x + h + h * Math.sign(c) * Math.sqrt(Math.abs(c)), py = y + h + h * Math.sign(n) * Math.sqrt(Math.abs(n));
+      if (i) p.lineTo(px, py); else p.moveTo(px, py);
+    }
+    p.closePath();
+  } else if (sh === 'rounded' && p.roundRect) p.roundRect(x, y, s, s, Math.min(s / 2, coverCfg.radius / 100 * s));
+  else p.rect(x, y, s, s);
+  return p;
+}
 const TEXT_FONTS = { montserrat: 'Montserrat, sans-serif', oswald: 'Oswald, sans-serif', bebas: '"Bebas Neue", Impact, sans-serif', playfair: '"Playfair Display", Georgia, serif', orbitron: 'Orbitron, sans-serif', pacifico: 'Pacifico, cursive', arial: 'Arial, Helvetica, sans-serif', georgia: 'Georgia, serif', courier: '"Courier New", Courier, monospace', impact: 'Impact, "Arial Black", sans-serif' };
 const TEXT_WEIGHTS = { default: [700, 400], regular: [400, 400], bold: [700, 700], heavy: [800, 800] };   // [artist, title / extra]
 const CIRC_CX = 960, CIRC_CY = 430, CIRC_MAX = 410;   // circular layout: ring centred above the bottom text block
@@ -457,6 +474,28 @@ $('textColor').oninput = $('textColor').onchange = e => { textCfg.color = e.targ
 $('textShColor').oninput = $('textShColor').onchange = e => { textCfg.shColor = e.target.value; };
 $('textMatch').onchange = e => { textCfg.match = e.target.checked; syncTextUI(); };
 syncTextDisabled();
+
+// Cover styling
+function syncCoverUI() {
+  const C = coverCfg;
+  $('coverRadius').disabled = C.shape !== 'rounded';                     // only the rounded square has corners to adjust
+  $('coverBorderMatch').disabled = C.bw <= 0;
+  $('coverBorderColor').disabled = C.bw <= 0 || C.bmatch;
+  ['coverShBlur', 'coverShX', 'coverShY', 'coverShColor'].forEach(id => { $(id).disabled = C.shOp <= 0; });   // nothing to adjust while the shadow is off
+  $('coverNoteColor').disabled = !C.note;
+  updateSliders();
+}
+$('coverOn').onchange = e => { coverCfg.on = e.target.checked; syncCoverUI(); };
+$('coverShape').onchange = e => { coverCfg.shape = e.target.value; syncCoverUI(); };
+$('coverFit').onchange = e => { coverCfg.fit = e.target.value; };
+$('coverAttach').onchange = e => { coverCfg.attach = e.target.checked; };
+$('coverBorderMatch').onchange = e => { coverCfg.bmatch = e.target.checked; syncCoverUI(); };
+$('coverNote').onchange = e => { coverCfg.note = e.target.checked; syncCoverUI(); };
+Object.entries({ coverSize: 'size', coverX: 'x', coverY: 'y', coverRadius: 'radius', coverOpacity: 'opacity', coverBw: 'bw', coverShOp: 'shOp', coverShBlur: 'shBlur', coverShX: 'shX', coverShY: 'shY' })
+  .forEach(([id, k]) => { $(id).oninput = e => { coverCfg[k] = +e.target.value; syncCoverUI(); }; });
+[['coverBorderColor', 'bcolor'], ['coverShColor', 'shColor'], ['coverNoteColor', 'noteColor']]
+  .forEach(([id, k]) => { $(id).oninput = $(id).onchange = e => { coverCfg[k] = e.target.value; }; });
+syncCoverUI();
 $('glowBars').oninput = e => { glowBars = +e.target.value; updateSliders(); };
 $('glowCover').oninput = e => { glowCover = +e.target.value; updateSliders(); };
 $('glowText').oninput = e => { glowText = +e.target.value; updateSliders(); };
@@ -534,6 +573,16 @@ const SLIDER_INFO = {
   glowBlur:    { unit: 'px',     tip: 'How far the glow spreads, in pixels of the 1920x1080 frame. Shared by bars, cover art and text.' },
   glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars (every mode except the Ridgeline). 0% = off.' },
   glowCover:   { scale: 100, unit: '%', tip: 'Glow around the cover artwork. 0% = off.' },
+  coverSize:   { unit: '%',      tip: 'Size of the cover. 100% is the original (192 px, or a bit under the ring radius in circular mode).' },
+  coverX:      { unit: 'px',     tip: 'Moves the cover left (negative) or right (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
+  coverY:      { unit: 'px',     tip: 'Moves the cover up (negative) or down (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
+  coverRadius: { unit: '%',      tip: 'Corner radius of the rounded square, as a percentage of the cover size. 50% = a circle.' },
+  coverOpacity:{ scale: 100, unit: '%', tip: 'How see-through the cover is. Useful over busy background images.' },
+  coverBw:     { unit: 'px',     tip: 'Border thickness, drawn inside the cover edge. 0 = no border.' },
+  coverShOp:   { scale: 100, unit: '%', tip: 'Strength of the drop shadow behind the cover. 0% = no shadow.' },
+  coverShBlur: { unit: 'px',     tip: 'How soft the shadow edge is, in pixels. 0 = a sharp copy of the cover shape.' },
+  coverShX:    { unit: 'px',     tip: 'Shadow offset to the right (positive) or left (negative), in pixels.' },
+  coverShY:    { unit: 'px',     tip: 'Shadow offset downward (positive) or upward (negative), in pixels.' },
   textSize:    { unit: '%',      tip: 'Size of the artist, title and extra-info text. 100% is the original size; the lines keep their spacing relative to each other.' },
   textSpace:   { unit: '%',      tip: 'Extra space between letters, as a percentage of the font size. Negative values squeeze the letters together.' },
   textX:       { unit: 'px',     tip: 'Moves the text left (negative) or right (positive), in pixels of the 1920x1080 frame.' },
@@ -967,44 +1016,72 @@ function frame() {
 
   drawParticles(mdt);
 
-  // Cover artwork: bottom-left normally, centred inside the ring in circular mode
-  const circ = vizMode === 'circular';
-  const pulseScale = bassPulse ? (1 + bass * pulseAmt) : 1;
-  const cs = (circ ? Math.round(circRadius * 0.95) : 192) * pulseScale;   // circular: a bit under the ring's radius, so the square sits well inside the bars
-  const ccx = circ ? CIRC_CX : 271, ccy = circ ? CIRC_CY : 689;
-  const cx = ccx - cs / 2, cy = ccy - cs / 2;
-  const coverGradient = g.createLinearGradient(cx, cy, cx + cs, cy + cs);
-  coverGradient.addColorStop(0, c1); coverGradient.addColorStop(1, c2);
-
-  g.save(); if (glowCover > 0) { g.shadowColor = glowCol(Math.min(1, glowCover)); g.shadowBlur = glowBlur; }
-  if (coverImg) {
-    const sq = Math.min(coverImg.width, coverImg.height);
-    g.drawImage(coverImg, (coverImg.width - sq) / 2, (coverImg.height - sq) / 2, sq, sq, cx, cy, cs, cs);
-  } else {
-    let cf = coverGradient;
-    if (rainbow) { cf = g.createLinearGradient(cx, cy, cx + cs, cy + cs); for (let k = 0; k <= 12; k++) cf.addColorStop(k / 12, `hsl(${(rbOffset + k * 30) % 360} 100% 55%)`); }
-    g.fillStyle = cf; g.fillRect(cx, cy, cs, cs);
-    const cp = new Path2D(); cp.rect(cx, cy, cs, cs); olStroke(cp, 4);   // same contrast outline as the bars when the cover blends into the background
-    // the note stays white (the original look) but gets a dark edge when white would be hard to read on the cover colors
-    const noteOL = rainbow ? 0 : needOL(Math.min(crOf('#ffffff', c1), crOf('#ffffff', c2)));
-    g.font = `800 ${cs * 0.573}px Montserrat`; g.textAlign = 'center';
-    if (noteOL > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = noteOL; g.strokeStyle = '#000'; g.lineWidth = Math.max(3, cs * 0.035); g.lineJoin = 'round'; g.strokeText('♪', cx + cs / 2, cy + cs * 0.703); g.restore(); }
-    g.fillStyle = '#fff';
-    g.fillText('♪', cx + cs / 2, cy + cs * 0.703); g.textAlign = 'left';
+  // Cover artwork: bottom-left normally, centred inside the ring in circular mode (styled in the Cover group)
+  const circ = vizMode === 'circular', C = coverCfg;
+  const bs = (circ ? Math.round(circRadius * 0.95) : 192) * C.size / 100;   // base side before the bass pulse; circular: a bit under the ring radius, so the cover sits well inside the bars
+  const ccx = circ ? CIRC_CX + C.x : X0 + bs / 2 + C.x, ccy = (circ ? CIRC_CY : 689) + C.y;   // default: left edge on the bars' left edge, vertically centred as in the original layout
+  const coverRight = ccx + bs / 2;   // unpulsed right edge: attached text hangs off this, so it doesn't jitter with the bass
+  if (C.on) {
+    const cs = bs * (bassPulse ? 1 + bass * pulseAmt : 1), cx = ccx - cs / 2, cy = ccy - cs / 2, S = Math.max(2, Math.ceil(cs));
+    const coverGrad = (cxt, x, y, s) => {
+      const gr = cxt.createLinearGradient(x, y, x + s, y + s);
+      if (rainbow) for (let k = 0; k <= 12; k++) gr.addColorStop(k / 12, `hsl(${(rbOffset + k * 30) % 360} 100% 55%)`);
+      else { gr.addColorStop(0, c1); gr.addColorStop(1, c2); }
+      return gr;
+    };
+    // 1) the cover itself, clipped to its shape, in its own buffer
+    if (coverBuf.width !== S) { coverBuf.width = S; coverBuf.height = S; } else bx.clearRect(0, 0, S, S);
+    bx.save(); bx.clip(coverShapePath(0, 0, cs));
+    if (coverImg) {
+      const iw = coverImg.width, ih = coverImg.height;
+      if (C.fit === 'fit') {   // whole image, black bars where it doesn't fill the shape
+        const k = Math.min(cs / iw, cs / ih), dw = iw * k, dh = ih * k;
+        bx.fillStyle = '#000'; bx.fillRect(0, 0, cs, cs);
+        bx.drawImage(coverImg, (cs - dw) / 2, (cs - dh) / 2, dw, dh);
+      } else {
+        const sq = Math.min(iw, ih);
+        bx.drawImage(coverImg, (iw - sq) / 2, (ih - sq) / 2, sq, sq, 0, 0, cs, cs);
+      }
+    } else {
+      bx.fillStyle = coverGrad(bx, 0, 0, cs); bx.fillRect(0, 0, cs, cs);
+      if (C.note) {   // the note is white by default but gets an opposite-tone edge when its color is hard to read on the cover colors
+        const noteOL = rainbow ? 0 : needOL(Math.min(crOf(C.noteColor, c1), crOf(C.noteColor, c2)));
+        bx.font = `800 ${cs * 0.573}px Montserrat`; bx.textAlign = 'center';
+        if (noteOL > 0) { bx.save(); bx.globalAlpha = noteOL; bx.strokeStyle = inkFor(C.noteColor); bx.lineWidth = Math.max(3, cs * 0.035); bx.lineJoin = 'round'; bx.strokeText('♪', cs / 2, cs * 0.703); bx.restore(); }
+        bx.fillStyle = C.noteColor; bx.fillText('♪', cs / 2, cs * 0.703); bx.textAlign = 'left';
+      }
+    }
+    bx.restore();
+    // 2) onto the frame: glow and drop shadow first (shadow-only passes: the picture itself is thrown far off-canvas and only its shadow lands here), then the cover once, so opacity never stacks
+    const full = coverShapePath(cx, cy, cs), FAR = 10000;
+    g.save(); g.globalAlpha = C.opacity;
+    const shadowPass = (col, blur, sx, sy) => { g.save(); g.shadowColor = col; g.shadowBlur = blur; g.shadowOffsetX = FAR + sx; g.shadowOffsetY = sy; g.drawImage(coverBuf, cx - FAR, cy); g.restore(); };
+    if (glowCover > 0) shadowPass(glowCol(Math.min(1, glowCover)), glowBlur, 0, 0);
+    if (C.shOp > 0) { const sc = rgbOf(C.shColor); shadowPass(`rgba(${sc[0]},${sc[1]},${sc[2]},${C.shOp})`, C.shBlur, C.shX, C.shY); }
+    g.drawImage(coverBuf, cx, cy);
+    g.restore();
+    // 3) border (inside the edge) or, without one, the contrast outline for a placeholder that blends into the background
+    if (C.bw > 0) {
+      g.save(); g.globalAlpha = C.opacity; g.clip(full);
+      g.strokeStyle = C.bmatch ? coverGrad(g, cx, cy, cs) : C.bcolor; g.lineWidth = C.bw * 2; g.lineJoin = 'round'; g.stroke(full);
+      g.restore();
+    } else if (!coverImg) olStroke(full, 4, C.opacity);
   }
-  g.restore();
 
   // text: styled in the Text group. Right of the cover normally, centred under the ring in circular mode
   const T = textCfg, ts = T.size / 100;
   const artist = $('artist').value.toUpperCase(), title = $('title').value.toUpperCase(), extra = $('extra').value.trim().toUpperCase();
   const three = !!extra, wt = TEXT_WEIGHTS[T.weight] || TEXT_WEIGHTS.default;
-  const maxW = circ ? 1500 : X1 - 403;
+  // Text left edge: hangs off the cover's right edge (attached), stays at the original spot (independent), or takes the cover's place when it is hidden. Circular: always under the ring.
+  const tL = circ ? X0 : !C.on ? X0 : C.attach ? Math.min(coverRight + 36, X1 - 200) : 403;
+  const attachDy = !circ && C.on && C.attach ? C.y : 0;   // the text also follows the cover up and down
+  const maxW = circ ? 1500 : X1 - tL;
   const algn = T.align === 'auto' ? (circ ? 'center' : 'left') : T.align;
-  const ax = (circ ? { left: X0, center: CIRC_CX, right: X1 } : { left: 403, center: (403 + X1) / 2, right: X1 })[algn] + T.x;
+  const ax = (circ ? { left: X0, center: CIRC_CX, right: X1 } : { left: tL, center: (tL + X1) / 2, right: X1 })[algn] + T.x;
   const yy = circ ? (three ? [925, 975, 1025] : [945, 1005]) : (three ? [666, 716, 762] : [698, 753]);   // baselines of the original layout
   const lineY0 = i => yy[0] + (yy[i] - yy[0]) * ts;                                                       // spacing between lines grows with the size
   const yShift = circ ? Math.min(0, 1062 - lineY0(three ? 2 : 1)) : 0;                                     // circular: big text must not run off the bottom (the Y offset below can still move it)
-  const lineY = i => lineY0(i) + yShift + T.y;
+  const lineY = i => lineY0(i) + yShift + T.y + attachDy;
   const sp = T.space / 100, shRGB = rgbOf(T.shColor);
   g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
   const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read (rainbow text is judged via ol)
@@ -1134,7 +1211,7 @@ function getSettings(withText) {
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
-    stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }
+    stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }
   };
 }
 function applySettings(p) {
@@ -1168,6 +1245,14 @@ function applySettings(p) {
     setCtl('textSize', tx.size); setCtl('textSpace', tx.space); setCtl('textX', tx.x); setCtl('textY', tx.y);
     setCtl('textColor', tx.color); setCtl('textMatch', tx.match);
     setCtl('textShOp', tx.shOp); setCtl('textShBlur', tx.shBlur); setCtl('textShX', tx.shX); setCtl('textShY', tx.shY); setCtl('textShColor', tx.shColor);
+  }
+  const cvr = p.cover;
+  if (cvr) {
+    setCtl('coverOn', cvr.on); setCtl('coverShape', cvr.shape); setCtl('coverFit', cvr.fit); setCtl('coverAttach', cvr.attach);
+    setCtl('coverSize', cvr.size); setCtl('coverX', cvr.x); setCtl('coverY', cvr.y); setCtl('coverRadius', cvr.radius); setCtl('coverOpacity', cvr.opacity);
+    setCtl('coverBw', cvr.bw); setCtl('coverBorderColor', cvr.bcolor); setCtl('coverBorderMatch', cvr.bmatch);
+    setCtl('coverShOp', cvr.shOp); setCtl('coverShBlur', cvr.shBlur); setCtl('coverShX', cvr.shX); setCtl('coverShY', cvr.shY); setCtl('coverShColor', cvr.shColor);
+    setCtl('coverNote', cvr.note); setCtl('coverNoteColor', cvr.noteColor);
   }
   updateOverlayTheme(); updateSliders();
 }
@@ -1227,7 +1312,7 @@ Object.assign(PRESETS.chillwave, { bars: { shape: 'capsule' } });
 Object.assign(PRESETS.minimal, { bars: { shape: 'rounded', round: 3 } });
 function applyPreset(key) {
   const p = PRESETS[key]; if (!p) return;
-  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text;   // presets never touch the text or its styling
+  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text; delete base.cover;   // presets never touch the text or cover styling
   const m = { ...base, ...p };
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
@@ -1253,7 +1338,7 @@ $('savePresetBtn').onclick = () => {
   if (isBuiltIn(low) || Object.values(PRESET_INFO).some(v => v[0].toLowerCase() === low)) { notify('That name belongs to a built-in preset. Choose another name.', true); return; }
   const isNew = !Object.prototype.hasOwnProperty.call(PRESETS, key);
   if (!isNew && !confirm(`A preset named "${name}" already exists. Replace it?`)) return;
-  const snap = getSettings(false); delete snap.text;   // like the built-in presets, never include text styling
+  const snap = getSettings(false); delete snap.text; delete snap.cover;   // like the built-in presets, never include text or cover styling
   snap.__name = name;   // display name, so undo/redo can rebuild the dropdown
   PRESETS[key] = snap;
   if (isNew) { const opt = document.createElement('option'); opt.value = key; opt.textContent = name; $('presetSelect').appendChild(opt); }
@@ -1286,6 +1371,8 @@ const projectSchema = () => ({
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
   particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
+  cover: { on: bool, shape: sel('coverShape'), fit: sel('coverFit'), attach: bool, size: rg('coverSize'), x: rg('coverX'), y: rg('coverY'), radius: rg('coverRadius'), opacity: rg('coverOpacity'),
+    bw: rg('coverBw'), bcolor: hex, bmatch: bool, shOp: rg('coverShOp'), shBlur: rg('coverShBlur'), shX: rg('coverShX'), shY: rg('coverShY'), shColor: hex, note: bool, noteColor: hex },
   text: { font: sel('textFont'), weight: sel('textWeight'), align: sel('textAlign'), size: rg('textSize'), space: rg('textSpace'), x: rg('textX'), y: rg('textY'), color: hex, match: bool, shOp: rg('textShOp'), shBlur: rg('textShBlur'), shX: rg('textShX'), shY: rg('textShY'), shColor: hex }
 });
 function cleanProject(schema, obj, path, bad) {   // keeps only valid fields (numbers clamped to the real control ranges); lists the rest in bad
