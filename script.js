@@ -127,7 +127,7 @@ $('overlayColors').onchange = updateOverlayTheme;
 $('lockOverlay').onchange = e => { lockOverlay = e.target.checked; updateOverlayTheme(); };
 const vals = new Float32Array(N);
 
-const stars = Array.from({ length: 600 }, () => ({
+const stars = Array.from({ length: 1200 }, () => ({
   x: Math.random() * 1920, y: Math.random() * 1080,
   r: 0.5 + Math.random() * 1.8, k: 0.1 + Math.random() * 0.4,
   c: (Math.random() - 0.5) * 0.15, a: 0.25 + Math.random() * 0.6, t: Math.random()   // t: this star's place in the gradient / rainbow
@@ -636,6 +636,47 @@ function initReadouts() {
 }
 initReadouts();
 
+// Tooltips for the checkboxes and dropdowns (sliders get theirs from SLIDER_INFO above). A tooltip already set in the HTML wins.
+const CONTROL_TIPS = {
+  vizMode: 'How the music is drawn. Each mode shows its own extra settings below.',
+  barShape: 'Shape of each bar in the 63-bar and mirrored modes. Corner size applies to Rounded and Beveled.',
+  circSym: 'On: the left and right halves of the ring mirror each other, with the bass at the top. Off: the spectrum wraps once around the ring.',
+  dotsPeak: 'A single dot per column that stays at the highest recent level and slowly falls back down.',
+  bassPulse: 'Makes the cover grow a little on every bass hit. The amount is set by Cover pulse.',
+  bgAudioReactive: 'Lights up the background with your main color on bass hits. The strength is set by BG pulse.',
+  gradient: 'Blend from the main color to a second end color across the bars, cover and text.',
+  autoColorCycle: 'Slowly rotates the main and gradient colors around the color wheel while the song plays.',
+  rainbow: 'Paints the full color spectrum across the bars (or around the ring). Replaces the main and gradient colors while on.',
+  rbMove: 'Slides the rainbow along while the song plays.',
+  bgGradient: 'Blend from the background color to a second color, at the angle set by the dial.',
+  starsOn: 'Shows the drifting star field behind the visualizer.',
+  starFlash: 'Stars grow and brighten on every detected beat. The strength is set by Intensity.',
+  starColor: 'Color of the stars: plain white, your main color, the gradient colors, or the whole rainbow.',
+  partOn: 'Releases a burst of particles from the bars (or the ring) on strong beats.',
+  coverOn: 'Shows or hides the cover. When hidden, the text slides left into the free space.',
+  coverShape: 'Outline of the cover and its placeholder.',
+  coverFit: 'Crop to fill cuts the image to fill the shape. Fit shows the whole image with black bars where it does not fill it.',
+  coverAttach: 'On: moving or resizing the cover carries the text with it. Off: the text stays where it is.',
+  coverBorderMatch: 'Paints the border with the same colors (gradient or rainbow) as the visualizer.',
+  coverNote: 'Shows the music note on the placeholder that appears when no cover image is loaded.',
+  textFont: 'Typeface for artist, title and extra info. Fonts other than Montserrat and the system fonts are fetched from Google Fonts when first picked.',
+  textWeight: 'Default = bold artist over a regular title (the original look). The other choices use one weight for every line. Some fonts only have one weight.',
+  textAlign: 'Auto = left of the cover, or centered under the ring in circular mode.',
+  textMatch: 'Paints the text with the same colors (gradient or rainbow) as the visualizer.',
+  presetSelect: 'Applies a look. Presets never change your text or cover styling. Ctrl+Z undoes it.',
+  presetRandomize: 'Applies a random color and layout look each time you choose a new song.',
+  overlayColors: 'Tints the play bar, sliders and checkboxes with your main color.',
+  lockOverlay: 'Keeps the interface on the color you last picked, so auto color cycling and rainbow mode do not keep recoloring it.',
+  expFormat: 'Container and codec of the exported video. Only formats this browser can record are listed.',
+  expRes: 'Size of the exported video. The picture is drawn at 1920 x 1080 and scaled, so larger sizes are an upscale.',
+  expFps: 'Frames per second of the exported video.',
+  expAudioBr: 'Audio quality of the exported video.'
+};
+for (const [id, tip] of Object.entries(CONTROL_TIPS)) {
+  const el = $(id), lab = el && el.closest('label');
+  if (lab && !lab.title) lab.title = tip;
+}
+
 // Messages: toast near the bottom of the screen (always visible) + the status line
 let toastT;
 function notify(msg, err = false) {
@@ -730,7 +771,7 @@ const lerpHex = (a, b, t) => '#' + rgbOf(a).map((v, i) => Math.round(v + (rgbOf(
 function spawnBurst() {
   if (!partCfg.on) return;
   const c2 = useGradient ? gradientColor : visualColor;
-  for (let i = 0; i < partCfg.count && parts.length < 1500; i++) {
+  for (let i = 0; i < partCfg.count && parts.length < 3000; i++) {
     const sp = (120 + Math.random() * 260) * partCfg.speed;
     let x, y, a, t, tr;
     if (vizMode === 'circular') {               // explode outward from the ring
@@ -1431,8 +1472,8 @@ function randomizeSettings() {
     mir: { count: R('mirCount', 0.2, 0.9) }, dots: { count: R('dotsCount', 0.2, 0.8), peak: chance(0.7) },
     sens: R('sens', 0.35, 0.7),
     bassPulse: chance(0.8), pulseAmt: R('pulseAmt', 0.1, 0.6), bgReactive: chance(0.4), bgPulse: R('bgPulseAmt', 0.2, 0.7),
-    stars: { on: chance(0.85), count: R('starDensity', 0.1, 0.7), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)), color: pick(['white', 'white', 'main', 'gradient', 'rainbow']) },
-    particles: { on: chance(0.8), count: R('partCount', 0.1, 0.6), size: R('partSize', 0.2, 0.6), speed: R('partSpeed', 0.2, 0.7) }
+    stars: { on: chance(0.85), count: R('starDensity', 0.05, 0.35), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)), color: pick(['white', 'white', 'main', 'gradient', 'rainbow']) },
+    particles: { on: chance(0.8), count: R('partCount', 0.05, 0.3), size: R('partSize', 0.2, 0.6), speed: R('partSpeed', 0.2, 0.7) }
   });
 }
 $('randomizeBtn').onclick = () => { randomizeSettings(); commitHistory(); notify('Random look applied. Undo (Ctrl+Z) brings your old one back.'); };
