@@ -1076,3 +1076,23 @@ input[type=color]:disabled {
   input[type=checkbox] { width: 24px; height: 24px; }
   input[type=checkbox]:checked::before { width: 12px; height: 7px; }
 }
+/* frequency range graph: drag handles */
+.band-graph {
+  max-width: 640px;
+  margin-top: 12px;
+  touch-action: none;
+  cursor: ew-resize
+}
+
+/* the Advanced section wraps several rows, so it joins the group's label | slider | value columns itself */
+@supports (grid-template-columns: subgrid) {
+  #bandAdv:not([hidden]) {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1
+  }
+
+  #bandAdv>* {
+    grid-column: 1 / -1
+  }
+}
