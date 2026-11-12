@@ -37,6 +37,7 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 - Seven visualizer modes, from the classic bars to a ridgeline plot
 - Audio-reactive motion with adjustable sensitivity, bass-driven cover and background pulses, and beat-triggered stars and particles
 - Colors: main color, gradient, rainbow, auto color cycling, background color/gradient/image
+- An adjustable frequency range with a draggable graph, plus advanced tone and response controls
 - A styleable cover (shape, size, position, border, shadow, opacity) and fully styleable text (font, weight, alignment, shadow)
 - Glow effects, a star field and particle bursts, with direction control
 - Presets, JSON projects, randomize, reset, and 100-step undo/redo
@@ -78,6 +79,29 @@ Settings are grouped in collapsible panels. Every slider also has a numeric box 
 | Sensitivity | Bar height gain, 40–160%. 100% matches the original reference look. |
 | Pulse cover artwork to bass | Makes the cover grow on bass hits; **Cover pulse** sets the amount (up to 40%). |
 | Pulse background to bass | Adds a wash of the main color on bass; **BG pulse** sets the strength. |
+
+</details>
+
+<details>
+<summary><strong>Frequency range</strong></summary>
+
+Chooses which part of the sound spectrum the 63 bars show. A graph on a logarithmic frequency axis (20 Hz to 20 kHz) displays the bar positions, lights them up with the music, and has two handles you can drag. The sliders below it stay in sync with the handles.
+
+| Control | What it does |
+| --- | --- |
+| Lowest / Highest | First and last frequency shown (20–500 Hz and 1–20 kHz). The default is 20.9 Hz to 13.7 kHz. |
+| Band spacing | 0% = logarithmic (default), 100% = linear, which gives the treble many more bars. |
+| Reset range | Restores every frequency setting, including the advanced ones. |
+
+**Advanced options** (collapsed by default):
+
+| Group | Controls |
+| --- | --- |
+| Tone balance | Treble boost (dB per octave), the frequency it starts from, its maximum, and the low-end cut |
+| Response | Smoothing between neighbouring bars, rise speed, fall speed, noise floor, contrast |
+
+> [!NOTE]
+> The bass pulse (cover, background and star boost) follows the lowest bars up to about 98 Hz, at least three, so it still works when you move the range. Beat detection always listens to 30–150 Hz.
 
 </details>
 
@@ -165,13 +189,13 @@ When your colors are too close to the background, an outline in the opposite ton
 
 - **Built-in presets (10):** Default Nebula, Cyberpunk Neon, Sunset Vibes, Minimal Mono, Cinematic, Neon Ring, Chillwave, Synthwave, Clean Minimal and Dark Club.
 - **Custom presets:** **Save Current as Preset** stores the current look. Built-in names are protected, and replacing an existing preset asks first.
-- **Export / Import JSON:** saves and loads every setting, including text and cover styling. Audio and images are not included. Imports are validated: invalid fields are skipped with a message, and numbers are clamped to each control's real range.
+- **Export / Import JSON:** saves and loads every setting, including text, cover and frequency range. Audio and images are not included. Imports are validated: invalid fields are skipped with a message, and numbers are clamped to each control's real range.
 - **Randomize:** applies a random color and layout look. **Randomize look when a new song loads** does it automatically.
 - **Reset to defaults:** asks for confirmation and keeps your song, images and text content.
 - **Undo / Redo:** up to 100 steps covering settings, images and custom presets. Dragging a slider counts as one step, and auto color cycling never adds steps.
 
 > [!NOTE]
-> Presets leave the text and cover styling alone, so switching looks never changes your layout. Reset to defaults does restore them.
+> Presets leave the text, cover and frequency range alone, so switching looks never changes your layout. Reset to defaults does restore them.
 
 ## Output: screenshots and video
 
@@ -210,14 +234,14 @@ flowchart LR
     A[Audio file] -->|decodeAudioData| B[AudioBuffer]
     B --> C[Playback source] --> D[Volume] --> E[Speakers / recorder]
     B --> F[Analysis source<br/>muted] --> G[AnalyserNode<br/>FFT 8192]
-    G --> H[63 log-spaced bands<br/>20.9 Hz to 13.7 kHz]
+    G --> H[63 bands<br/>20.9 Hz to 13.7 kHz by default]
     H --> I[Smoothing, auto gain,<br/>attack / decay]
     I --> J[Canvas 1920×1080]
     G --> K[Beat detector<br/>30 to 150 Hz]
     K --> J
 ```
 
-- The spectrum is split into 63 logarithmic bands, tilt-corrected, smoothed, and normalized by an automatic gain so quiet and loud songs both look good.
+- The spectrum is split into 63 bands (logarithmic by default, range adjustable), tilt-corrected, smoothed, and normalized by an automatic gain so quiet and loud songs both look good.
 - A beat is a jump in 30–150 Hz energy relative to its own recent average. It drives star flashes, particle bursts and the bass pulse.
 - Everything is drawn to a single 1920×1080 canvas, which is also what screenshots and recordings capture.
 
