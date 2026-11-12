@@ -1,7 +1,6 @@
 legacy/
 outputs/
 presets/
-tools/
 .DS_Store
 Thumbs.db
 *.mp3
