@@ -1071,3 +1071,8 @@ input[type=color]::-moz-color-swatch {
 input[type=color]:disabled {
   cursor: default
 }
+/* touch screens: larger checkboxes */
+@media (pointer: coarse), (max-width: 700px) {
+  input[type=checkbox] { width: 24px; height: 24px; }
+  input[type=checkbox]:checked::before { width: 12px; height: 7px; }
+}
