@@ -1,0 +1,9 @@
+{
+  "name": "nebulaviz",
+  "private": true,
+  "description": "Nebula Visualizer: a browser-based audio visualizer. There is no build step; this file only runs the tests.",
+  "scripts": {
+    "test": "node --test",
+    "fonts": "node tools/get-fonts.mjs"
+  }
+}

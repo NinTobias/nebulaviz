@@ -10,7 +10,7 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic
 ![Nebula Visualizer screenshot](preview.png)
 
 > [!NOTE]
-> Your audio and images are processed entirely in your browser. Nothing is uploaded anywhere.
+> Your audio and images are processed entirely in your browser. Nothing is uploaded anywhere. Web fonts are the one outside request: run `npm run fonts` once to self-host them (see [Fonts](#fonts-and-privacy)).
 
 ## Contents
 
@@ -27,6 +27,8 @@ A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic
   - [How it works](#how-it-works)
   - [Browser support and limits](#browser-support-and-limits)
   - [Project structure](#project-structure)
+    - [Fonts and privacy](#fonts-and-privacy)
+    - [Why `script.js` is still one file](#why-scriptjs-is-still-one-file)
   - [Notes](#notes)
 
 ## Overview
@@ -35,7 +37,9 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 
 **Highlights**
 
-- Seven visualizer modes, from the classic bars to a ridgeline plot
+- Seven visualizer modes, from the classic bars to a ridgeline plot, each with its own controls
+- A built-in demo track (**Try demo**), so you can see it move before choosing a song
+- A visual preset gallery, and an **Essentials / All settings** switch that keeps the panel list short for newcomers
 - Audio-reactive motion with adjustable sensitivity, bass-driven cover and background pulses, and beat-triggered stars and particles
 - Colors: main color, gradient, rainbow, auto color cycling, background color/gradient/image
 - An adjustable frequency range with a draggable graph, plus advanced tone and response controls
@@ -49,7 +53,7 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 
 1. Open the live demo, or open `index.html` locally in a browser. No build step or server is needed.
 2. Click **Choose song** and pick an audio file (see [limits](#browser-support-and-limits)). Artist, title and embedded cover art are filled in automatically when the file has [ID3 tags](#song-tags-id3).
-3. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
+3. No song at hand? Press **Try demo** to play a built-in tune. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
 4. Press play (<kbd>Space</kbd>) and choose a mode in the **Visualizer** panel.
 5. Tweak colors, cover, text, glow and stars to match the track.
 6. Save a preset, export a project, or capture a screenshot or video.
@@ -61,16 +65,16 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 | **63-Bar Spectrum** | Classic FFT bars, the original Nebula look | Bar shape, corner size, spacing |
 | **Circular Spectrum** | Bars radiating around a ring, bass at the top | Symmetry, radius, bar length, width, count |
 | **Mirrored Spectrum** | Symmetrical bars around a center line | Bar count (16–160), bar shape, spacing |
-| **Smooth Wave** | One continuous flowing curve with a soft fill | None |
-| **Mirrored Smooth Wave** | The same curve above and below a center line | None |
+| **Smooth Wave** | One continuous flowing curve with a soft fill | Line width, fill, line glow, detail |
+| **Mirrored Smooth Wave** | The same curve above and below a center line | Line width, fill, line glow, detail |
 | **LED Matrix** | Columns of round lights | Column count (16–100), falling peak dots (gravity) |
-| **Ridgeline** | Recent spectrum history stacked back to front | None; has no glow |
+| **Ridgeline** | Recent spectrum history stacked back to front | Rows, row spacing, peak height, line width; only the front line glows |
 
 Bar shapes are **Rectangle**, **Rounded**, **Capsule** and **Beveled**. Corner size applies to Rounded and Beveled.
 
 ## Settings reference
 
-Settings are grouped in collapsible panels. Every slider also has a numeric box where you can type an exact value, and hovering a slider explains what the number means.
+Settings are grouped in collapsible panels. **Essentials** (the default for first-time visitors) hides the technical panels, Frequency range and Stars & Particles; **All settings** shows everything, and your choice is remembered. Every slider also has a numeric box where you can type an exact value, and hovering a slider explains what the number means.
 
 <details>
 <summary><strong>Sound & Reactivity</strong></summary>
@@ -128,7 +132,7 @@ Chooses which part of the sound spectrum the 63 bars show. A graph on a logarith
 <details>
 <summary><strong>Glow</strong></summary>
 
-A shared **Blur radius** plus separate strengths for **Bars**, **Cover art** and **Text**. The glow uses your main color (or the live rainbow hue). 0% turns a glow off.
+A shared **Blur radius** plus separate strengths for **Bars**, **Cover art** and **Text**. The glow uses your main color (or the live rainbow hue). 0% turns a glow off. In the Ridgeline only the front line glows, because a glow on every row would be too heavy to draw.
 
 </details>
 
@@ -188,6 +192,7 @@ When your colors are too close to the background, an outline in the opposite ton
 
 ## Presets, projects and history
 
+- **Preset gallery:** every preset, built-in or your own, is a small card drawn from its colors and mode. Click one to apply it.
 - **Built-in presets (10):** Default Nebula, Cyberpunk Neon, Sunset Vibes, Minimal Mono, Cinematic, Neon Ring, Chillwave, Synthwave, Clean Minimal and Dark Club.
 - **Custom presets:** **Save Current as Preset** stores the current look. Built-in names are protected, and replacing an existing preset asks first.
 - **Export / Import JSON:** saves and loads every setting, including text, cover and frequency range. Audio and images are not included. Imports are validated: invalid fields are skipped with a message, and numbers are clamped to each control's real range.
@@ -217,11 +222,12 @@ When you load an MP3 (or any file with ID3v1 or ID3v2.2 / 2.3 / 2.4 tags), Nebul
 | Option | Choices |
 | --- | --- |
 | Format | Whatever your browser can record: WebM (VP9, VP8, AV1 or default) and MP4 (H.264 or default) |
-| Resolution | 1280×720, 1920×1080, 2560×1440, 3840×2160 |
+| Resolution | 1280×720 (downscaled), 1920×1080 (native), 2560×1440 and 3840×2160 (upscaled) |
 | Frame rate | 24, 30 or 60 fps |
 | Audio bitrate | 128, 192, 256 or 320 kbps |
 
 - The picture is always drawn at 1920×1080 and scaled, so higher resolutions are an upscale.
+- Recording runs in real time, so keep the tab visible: browsers throttle background tabs and the video can drop frames. A warning appears if that happens.
 - Pausing the song pauses the recording. It stops and saves when you click the button again or the song ends.
 - The export follows the volume slider and mute, and survives seeking.
 - Video and screenshots match the on-screen result.
@@ -259,6 +265,7 @@ flowchart LR
 ## Browser support and limits
 
 - **Audio:** decoded by your browser, so supported formats vary (MP3, WAV, OGG, FLAC, M4A, AAC and others typically work).
+- **Long files:** a song is decoded into memory in full (about 10 to 20 times the size of an MP3). Files estimated to need more than about 0.8 GB (less on small devices) are refused with a message instead of crashing the tab. In practice that means roughly an hour of stereo audio at most.
 - **Images:** up to 25 MB each. Large images are downscaled to the size that can actually be drawn.
 - **Video export:** needs `MediaRecorder` and canvas capture. Only formats your browser supports are listed.
 - **Older browsers:** rounded cover corners fall back to square without `roundRect`, and the settings layout falls back to a simpler grid without CSS subgrid.
@@ -268,10 +275,29 @@ flowchart LR
 | File | Purpose |
 | --- | --- |
 | `index.html` | Application UI and controls |
+| `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art). A plain script with no dependencies |
+| `demo.js` | Synthesizer for the built-in demo track. A plain script with no dependencies |
 | `style.css` | Layout, theming and visual styling |
 | `script.js` | Audio analysis, rendering, presets, export/import and visualizer behavior |
+| `tests/` | Node tests for the ID3 reader, the demo synth and the font tool. Run `npm test` (Node 20+; nothing to install) |
+| `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` for self-hosting (`npm run fonts`) |
+| `fonts/` | Created by the font tool; not in the repository until you run it |
 
 **Built with:** vanilla JavaScript, the Web Audio API (`AnalyserNode` and audio buffers), and HTML Canvas 2D. No framework or build step.
+
+### Fonts and privacy
+
+The text options use a few Google fonts. Until you run the font tool, the page loads them from Google Fonts, which is the one request that leaves your browser. To self-host them:
+
+```
+npm run fonts      # or: node tools/get-fonts.mjs  (needs Node 18+ and internet, once)
+```
+
+then commit the generated `fonts/` folder. The page loads `fonts/fonts.css` first and only falls back to Google when that file is missing.
+
+### Why `script.js` is still one file
+
+The pure, testable parts live in their own plain scripts (`id3.js`, `demo.js`), loaded in order before `script.js`. They are ordinary scripts rather than ES modules on purpose: modules cannot be loaded from `file://`, and "open `index.html` locally" is a feature. The rendering, settings and history code is tightly interwoven and needs a browser to test, so it stays together for now.
 
 ## Notes
 

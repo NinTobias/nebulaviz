@@ -25,6 +25,7 @@ let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beat
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
 let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
 let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLength = 190, mirCount = 63, dotsCount = 63, dotsPeak = true;
+let waveWidth = 6, waveFill = 0.3, waveGlow = 1, waveDetail = 126, ridgeRows = 14, ridgeStep = 20, ridgeAmp = 175, ridgeLine = 1;   // Smooth Wave / Ridgeline options
 let barShape = 'rect', barRound = 4, barGap = 7, glowBlur = 24, glowBars = 0, glowCover = 0, glowText = 0;
 const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
 const textCfg = { font: 'montserrat', weight: 'default', size: 100, space: 0, align: 'auto', x: 0, y: 0, color: '#ffffff', match: false, shOp: 0, shBlur: 8, shX: 3, shY: 3, shColor: '#000000' };
@@ -192,146 +193,80 @@ function startAt(off) {
 }
 
 let loadGen = 0;
-// --- ID3 tags (MP3 and friends): title, artist, album, year, track, genre and embedded cover art. Supports ID3v1 and ID3v2.2 / 2.3 / 2.4. ---
-const ID3_TEXT = { TIT2: 'title', TT2: 'title', TPE1: 'artist', TP1: 'artist', TALB: 'album', TAL: 'album', TDRC: 'year', TYER: 'year', TYE: 'year', TRCK: 'track', TRK: 'track', TCON: 'genre', TCO: 'genre' };
-const id3Sync = (u, i) => (u[i] & 127) << 21 | (u[i + 1] & 127) << 14 | (u[i + 2] & 127) << 7 | (u[i + 3] & 127);
-const id3Unsync = u => { const o = []; for (let i = 0; i < u.length; i++) { o.push(u[i]); if (u[i] === 255 && u[i + 1] === 0) i++; } return Uint8Array.from(o); };
-function id3Term(b, from, enc) {   // index of the string terminator at or after `from` (-1 if none); UTF-16 terminators are two aligned zero bytes
-  if (enc === 1 || enc === 2) { for (let i = from; i + 1 < b.length; i += 2) if (!b[i] && !b[i + 1]) return i; return -1; }
-  return b.indexOf(0, from);
+let coverFromTag = false, autoArtist = null;   // so a new song may replace art / artist that came from the previous song's tags, but never the user's own choices
+
+// Decoded audio lives in memory as 32-bit floats: about 10-20x the size of an MP3 and 2x a 16-bit WAV. A very long file would exhaust the
+// browser's memory, so a rough estimate is checked first and the file is refused with a clear message instead of crashing the tab.
+function estimateDecodedBytes(f) {
+  const ext = (f.name.match(/\.(\w+)$/) || [])[1] || '';
+  return f.size * (/^(wav|aiff?)$/i.test(ext) ? 2.2 : /^flac$/i.test(ext) ? 4 : 16);   // PCM / FLAC / lossy (MP3, AAC, OGG, ...)
 }
-function id3Str(b, enc) {   // decode one string, honouring the byte-order mark of UTF-16
-  let label = 'iso-8859-1';
-  if (enc === 3) label = 'utf-8';
-  else if (enc === 1 || enc === 2) {
-    label = enc === 2 ? 'utf-16be' : 'utf-16le';
-    if (b[0] === 0xFE && b[1] === 0xFF) { label = 'utf-16be'; b = b.subarray(2); }
-    else if (b[0] === 0xFF && b[1] === 0xFE) { label = 'utf-16le'; b = b.subarray(2); }
-  }
-  return new TextDecoder(label).decode(b).replace(/\0+$/, '').trim();
-}
-function id3Strings(b, enc) {   // a text frame holds one or more terminated strings
-  const out = []; let p = 0;
-  while (p < b.length) {
-    let e = id3Term(b, p, enc); if (e < 0) e = b.length;
-    const s = id3Str(b.subarray(p, e), enc); if (s) out.push(s);
-    p = e + (enc === 1 || enc === 2 ? 2 : 1);
-  }
-  return out;
-}
-function id3Image(d) {   // sniff the real image type; embedded files often declare the wrong one
-  if (d[0] === 0x89 && d[1] === 0x50) return 'image/png';
-  if (d[0] === 0xFF && d[1] === 0xD8) return 'image/jpeg';
-  if (d[0] === 0x47 && d[1] === 0x49 && d[2] === 0x46) return 'image/gif';
-  if (d[0] === 0x52 && d[1] === 0x49 && d[2] === 0x46 && d[3] === 0x46) return 'image/webp';
-  return '';
-}
-function id3Picture(f, v) {   // APIC (v2.3/2.4) or PIC (v2.2) frame -> { data, mime, type }
-  const enc = f[0]; let p = 1;
-  if (v === 2) p += 3; else { const e = f.indexOf(0, p); if (e < 0) return null; p = e + 1; }   // image format / MIME type
-  const type = f[p++];
-  const e = id3Term(f, p, enc); if (e < 0) return null;   // description, not needed
-  p = e + (enc === 1 || enc === 2 ? 2 : 1);
-  const data = f.slice(p), mime = id3Image(data);
-  return mime && data.length > 32 ? { data, mime, type } : null;
-}
-function readID3v2(u, out) {
-  if (u.length < 10 || u[0] !== 0x49 || u[1] !== 0x44 || u[2] !== 0x33) return;   // "ID3"
-  const v = u[3], fl = u[5];
-  if (v < 2 || v > 4 || (v === 2 && fl & 0x40)) return;   // unknown version, or compressed v2.2 (never used in practice)
-  let body = u.subarray(10, Math.min(u.length, 10 + id3Sync(u, 6)));
-  if (v < 4 && fl & 0x80) body = id3Unsync(body);
-  let p = 0;
-  if (fl & 0x40) p = v === 3 ? 4 + ((body[0] << 24 | body[1] << 16 | body[2] << 8 | body[3]) >>> 0) : id3Sync(body, 0);   // extended header
-  const hdr = v === 2 ? 6 : 10;
-  while (p + hdr <= body.length && body[p] !== 0) {
-    const id = String.fromCharCode(...body.subarray(p, p + (v === 2 ? 3 : 4)));
-    if (!/^[A-Z0-9]+$/.test(id)) break;
-    const size = v === 2 ? body[p + 3] << 16 | body[p + 4] << 8 | body[p + 5] : v === 3 ? (body[p + 4] << 24 | body[p + 5] << 16 | body[p + 6] << 8 | body[p + 7]) >>> 0 : id3Sync(body, p + 4);
-    const f2 = v === 2 ? 0 : body[p + 9];
-    const start = p + hdr; p = start + size;
-    if (p > body.length) break;
-    if (v === 3 ? f2 & 0xC0 : f2 & 0x0C) continue;   // compressed or encrypted frame: skip
-    let d = body.subarray(start, p);
-    if (v === 3 && f2 & 0x20) d = d.subarray(1);   // grouping byte
-    if (v === 4) {
-      if (f2 & 0x40) d = d.subarray(1);                      // grouping byte
-      if (f2 & 0x01) d = d.subarray(4);                      // data length indicator
-      if (f2 & 0x02 || fl & 0x80) d = id3Unsync(d);          // unsynchronised frame
-    }
-    if (!d.length) continue;
-    if (ID3_TEXT[id]) {
-      const key = ID3_TEXT[id];
-      if (out[key]) continue;
-      const s = id3Strings(d.subarray(1), d[0]);
-      if (!s.length) continue;
-      let val = key === 'year' ? s[0].slice(0, 4) : key === 'track' ? s[0].split('/')[0].trim()
-        : key === 'genre' ? s.join(', ').replace(/^\(\d+\)/, '').trim() : s.join(', ');
-      if (key === 'genre' && /^\d+$/.test(val)) val = '';   // bare numeric genre codes aren't meaningful
-      if (val) out[key] = val;
-    } else if (id === 'APIC' || id === 'PIC') {
-      const pic = id3Picture(d, v);
-      if (pic && (!out.cover || (pic.type === 3 && out.cover.type !== 3))) out.cover = pic;   // prefer the front cover
-    }
-  }
-}
-function readID3v1(u, out) {   // fixed 128-byte block at the very end, used as a fallback for missing fields
-  if (u.length < 128) return;
-  const t = u.length - 128;
-  if (u[t] !== 0x54 || u[t + 1] !== 0x41 || u[t + 2] !== 0x47) return;   // "TAG"
-  const s = (a, n) => new TextDecoder('iso-8859-1').decode(u.subarray(t + a, t + a + n)).replace(/[\0\s]+$/, '');
-  if (!out.title && s(3, 30)) out.title = s(3, 30);
-  if (!out.artist && s(33, 30)) out.artist = s(33, 30);
-  if (!out.album && s(63, 30)) out.album = s(63, 30);
-  if (!out.year && /^\d{4}$/.test(s(93, 4))) out.year = s(93, 4);
-  if (!out.track && u[t + 125] === 0 && u[t + 126]) out.track = String(u[t + 126]);
-}
-function readID3(ab) {   // never throws: a damaged tag just means no metadata
-  const u = new Uint8Array(ab), out = {};
-  try { readID3v2(u, out); } catch (e) { console.warn('ID3v2 tag could not be read', e); }
-  try { readID3v1(u, out); } catch (e) { console.warn('ID3v1 tag could not be read', e); }
-  return out;
+const audioMemoryLimit = () => Math.max(0.4, Math.min(2, (navigator.deviceMemory || 4) * 0.2)) * 1073741824;   // about 0.8 GB on a typical desktop, less on small devices
+const fmtMB = b => Math.round(b / 1048576).toLocaleString('en') + ' MB';
+
+// Make a decoded buffer the current song (shared by file loading and the built-in demo)
+function installSong(decoded, { gen, title, label, size, tags = {} }) {
+  stopRecording();   // only once the new song is really replacing the old one
+  buf = decoded;
+  $('title').value = tags.title || title;
+  if (tags.artist) { $('artist').value = tags.artist; autoArtist = tags.artist; }
+  else if (autoArtist !== null) { if ($('artist').value === autoArtist) $('artist').value = DEFAULTS.artist; autoArtist = null; }   // drop the previous song's artist, unless the user edited it
+  if (tags.cover) {
+    if (!coverImg || coverFromTag) loadImage(new File([tags.cover.data], 'cover', { type: tags.cover.mime }), 'cover', im => {
+      if (gen !== loadGen) return;
+      coverImg = im; coverFromTag = true; commitHistory();
+    });
+  } else if (coverFromTag) { coverImg = null; coverFromTag = false; }
+  const mm = Math.floor(buf.duration / 60), ss = Math.floor(buf.duration % 60);
+  $('songInfo').hidden = false;
+  const meta = [tags.artist && tags.title ? `${tags.artist} — ${tags.title}` : tags.title || tags.artist, tags.album, tags.year, tags.track && `Track ${tags.track}`, tags.genre].filter(Boolean).join(' · ');
+  $('songInfo').textContent = (meta ? meta + '\n' : '') + `${label} · ${mm}:${String(ss).padStart(2, '0')} · ${(buf.sampleRate / 1000).toFixed(1)} kHz · ${buf.numberOfChannels === 1 ? 'mono' : buf.numberOfChannels === 2 ? 'stereo' : buf.numberOfChannels + ' channels'}${size != null ? ` · ${(size / 1048576).toFixed(1)} MB` : ''}`;
+  stopAll();
+  playing = false; icon(false); vals.fill(0); parts.length = 0;
+  offset = 0; $('play').disabled = false; $('seek').disabled = false;
+  $('status').textContent = 'Ready. Press Play or Spacebar.';
+  if ($('presetRandomize').checked) randomizeSettings();
+  commitHistory();
 }
 
-let coverFromTag = false, autoArtist = null;   // so a new song may replace art / artist that came from the previous song's tags, but never the user's own choices
 $('song').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   const gen = ++loadGen;
+  const est = estimateDecodedBytes(f), limit = audioMemoryLimit();
+  if (est > limit) {
+    notify(`"${f.name}" is too long to load safely: it would need roughly ${fmtMB(est)} of memory once decoded, and this browser allows about ${fmtMB(limit)}. Try a shorter or smaller file.${buf ? ' Your previous song is still loaded.' : ''}`, true);
+    return;
+  }
   setup();
   const prevStatus = $('status').textContent;
-  $('status').textContent = 'Decoding audio…';
+  $('status').textContent = est > limit * 0.4 ? 'Decoding a large audio file, this can take a moment…' : 'Decoding audio…';
   try {
     const ab = await f.arrayBuffer();
     const tags = readID3(ab);   // read before decoding: decodeAudioData may detach the buffer
     const decoded = await ctx.decodeAudioData(ab);
     if (gen !== loadGen) return;   // a newer selection started: drop this stale result
-    stopRecording();   // only once the new song is really replacing the old one
-    buf = decoded;
-    $('title').value = tags.title || f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
-    if (tags.artist) { $('artist').value = tags.artist; autoArtist = tags.artist; }
-    else if (autoArtist !== null) { if ($('artist').value === autoArtist) $('artist').value = DEFAULTS.artist; autoArtist = null; }   // drop the previous song's artist, unless the user edited it
-    if (tags.cover) {
-      if (!coverImg || coverFromTag) loadImage(new File([tags.cover.data], 'cover', { type: tags.cover.mime }), 'cover', im => {
-        if (gen !== loadGen) return;
-        coverImg = im; coverFromTag = true; commitHistory();
-      });
-    } else if (coverFromTag) { coverImg = null; coverFromTag = false; }
-    const mm = Math.floor(buf.duration / 60), ss = Math.floor(buf.duration % 60);
-    $('songInfo').hidden = false;
-    const meta = [tags.artist && tags.title ? `${tags.artist} — ${tags.title}` : tags.title || tags.artist, tags.album, tags.year, tags.track && `Track ${tags.track}`, tags.genre].filter(Boolean).join(' · ');
-    $('songInfo').textContent = (meta ? meta + '\n' : '') + `${f.name} · ${mm}:${String(ss).padStart(2, '0')} · ${(buf.sampleRate / 1000).toFixed(1)} kHz · ${buf.numberOfChannels === 1 ? 'mono' : buf.numberOfChannels === 2 ? 'stereo' : buf.numberOfChannels + ' channels'} · ${(f.size / 1048576).toFixed(1)} MB`;
-    stopAll();
-    playing = false; icon(false); vals.fill(0); parts.length = 0;
-    offset = 0; $('play').disabled = false; $('seek').disabled = false;
-    $('status').textContent = 'Ready. Press Play or Spacebar.';
-    if ($('presetRandomize').checked) randomizeSettings();
-    commitHistory();
+    installSong(decoded, { gen, title: f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, ''), label: f.name, size: f.size, tags });
   } catch (err) {
     if (gen !== loadGen) return;
     $('status').textContent = buf ? prevStatus : 'No song loaded.';   // failed replacement: the previous song and its status stay as they were
     console.error('Audio decode failed:', { name: f.name, type: f.type || '(unknown)', size: f.size }, err);
-    notify(`Could not decode "${f.name}" (${f.type || 'unknown type'}${err && err.message ? ': ' + err.message : ''}). ${buf ? 'Your previous song is still loaded.' : 'No song is loaded.'} Supported formats depend on your browser.`, true);
+    notify(`Could not decode "${f.name}" (${f.type || 'unknown type'}${err && err.message ? ': ' + err.message : ''}). ${buf ? 'Your previous song is still loaded.' : 'No song is loaded.'} Supported formats depend on your browser.${f.size > 30 * 1048576 ? ' Very long files can also run out of memory.' : ''}`, true);
   }
+};
+
+// Built-in demo: a short synthesized tune (see demo.js), so the visualizer can be tried without a file
+$('demoBtn').onclick = async () => {
+  const gen = ++loadGen;
+  setup();
+  try {
+    await ctx.resume();
+    const d = renderDemoTrack(ctx.sampleRate);
+    const ab = ctx.createBuffer(2, d.left.length, d.sampleRate);
+    ab.copyToChannel(d.left, 0); ab.copyToChannel(d.right, 1);
+    if (gen !== loadGen) return;
+    installSong(ab, { gen, title: 'Demo Track', label: 'Built-in demo', size: null, tags: { artist: 'Nebula', title: 'Demo Track' } });
+    $('play').click();
+  } catch (err) { console.error('Demo failed:', err); notify('The demo track could not be started in this browser.', true); }
 };
 
 const IMG_MAX_BYTES = 25 * 1048576, IMG_MAX_PX = 4096;   // hard cap; the real target is smaller (see loadImage)
@@ -564,7 +499,7 @@ updateSliders();
 // --- Visualizer Mode Selectors & Controls ---
 function setMode(m) {
   if (!MODES.includes(m)) m = 'bars';
-  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored'; $('dotsOpts').hidden = m !== 'dots'; $('barOpts').hidden = !(m === 'bars' || m === 'mirrored');
+  vizMode = m; $('vizMode').value = m; $('circularOpts').hidden = m !== 'circular'; $('mirroredOpts').hidden = m !== 'mirrored'; $('dotsOpts').hidden = m !== 'dots'; $('waveOpts').hidden = !(m === 'wave' || m === 'wavemir'); $('ridgeOpts').hidden = m !== 'ridge'; $('barOpts').hidden = !(m === 'bars' || m === 'mirrored');
 }
 $('vizMode').onchange = e => setMode(e.target.value);
 $('circRadius').oninput = e => { circRadius = +e.target.value; updateSliders(); };
@@ -574,6 +509,14 @@ $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
 $('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
 $('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
+$('waveWidth').oninput = e => { waveWidth = +e.target.value; updateSliders(); };
+$('waveFill').oninput = e => { waveFill = +e.target.value; updateSliders(); };
+$('waveGlow').oninput = e => { waveGlow = +e.target.value; updateSliders(); };
+$('waveDetail').oninput = e => { waveDetail = +e.target.value; updateSliders(); };
+$('ridgeRows').oninput = e => { ridgeRows = +e.target.value; updateSliders(); };
+$('ridgeStep').oninput = e => { ridgeStep = +e.target.value; updateSliders(); };
+$('ridgeAmp').oninput = e => { ridgeAmp = +e.target.value; updateSliders(); };
+$('ridgeLine').oninput = e => { ridgeLine = +e.target.value; updateSliders(); };
 function syncBarUI() { $('barRound').disabled = !(barShape === 'rounded' || barShape === 'beveled'); }   // corner size only matters for these two
 $('barShape').onchange = e => { barShape = e.target.value; syncBarUI(); };
 $('barRound').oninput = e => { barRound = +e.target.value; updateSliders(); };
@@ -693,10 +636,18 @@ const SLIDER_INFO = {
   circWidth:   { unit: 'px',     tip: 'Thickness of each bar, in pixels.' },
   circCount:   { unit: 'bars',   tip: 'Number of bars around the ring.' },
   dotsCount:   { unit: 'bars',   tip: 'Number of columns in the LED matrix.' },
+  waveWidth:   { unit: 'px',     tip: 'Thickness of the wave line, in pixels (Smooth Wave modes).' },
+  waveFill:    { scale: 100, unit: '%', tip: 'Opacity of the soft fill under (or inside) the wave. 0% = line only.' },
+  waveGlow:    { scale: 100, unit: '%', tip: 'Strength of the glow around the wave line. It also pulses with the bass. 0% = no glow.' },
+  waveDetail:  { unit: 'pts',    tip: 'How many points the curve is drawn through. Fewer = rounder and smoother, more = follows every little peak.' },
+  ridgeRows:   { unit: 'rows',   tip: 'How many past moments of the spectrum are stacked behind the front line.' },
+  ridgeStep:   { unit: 'px',     tip: 'Vertical distance between neighbouring rows, in pixels. Larger = the stack reaches further up.' },
+  ridgeAmp:    { unit: 'px',     tip: 'How tall the loudest peak of a row can grow, in pixels.' },
+  ridgeLine:   { scale: 100, unit: '%', tip: 'Line thickness of every row. 100% is the standard look.' },
   barRound:    { unit: 'px',     tip: 'Corner size for the Rounded and Beveled shapes, in pixels. Large values are limited to what fits the bar.' },
   barGap:      { unit: 'px',     tip: 'Space between neighbouring bars, in pixels (63-bar and mirrored modes). Wider gaps make thinner bars.' },
   glowBlur:    { unit: 'px',     tip: 'How far the glow spreads, in pixels of the 1920x1080 frame. Shared by bars, cover art and text.' },
-  glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars (every mode except the Ridgeline). 0% = off.' },
+  glowBars:    { scale: 100, unit: '%', tip: 'Glow around the bars and lines. In the Ridgeline only the front line glows. 0% = off.' },
   glowCover:   { scale: 100, unit: '%', tip: 'Glow around the cover artwork. 0% = off.' },
   bandLo:      { unit: 'Hz',     tip: 'Lowest frequency shown by the bars. Raise it to skip sub-bass; the bars are then spread over the remaining range.' },
   bandHi:      { unit: 'Hz',     tip: 'Highest frequency shown by the bars. Lower it to drop the quiet top end and give the bass and mids more bars.' },
@@ -963,7 +914,7 @@ function drawStars(bass, dt) {
 }
 
 const parts = [];
-const peaks = new Float32Array(160), ridgeHist = [], RIDGE_ROWS = 14; let ridgeAcc = 0;
+const peaks = new Float32Array(160), ridgeHist = []; let ridgeAcc = 0;
 const ridgeBG = document.createElement('canvas'); ridgeBG.width = 1920; ridgeBG.height = 1080; const rbg = ridgeBG.getContext('2d');   // backdrop snapshot for the ridgeline   // LED-matrix peak dots, ridgeline history
 function ridgePaths(row, amp) {   // one ridge row as paths at y = 0 (moved into place with translate), so old rows are built only once
   const p = new Path2D(); p.moveTo(X0, -row[0] * amp);
@@ -1175,7 +1126,7 @@ function frame() {
     g.restore();
   } else if (vizMode === 'wave') {
     // Smooth Wave: one flowing glowing curve through all bands, with a soft fill underneath
-    const K = 126, pts = [];
+    const K = waveDetail, pts = [];
     for (let j = 0; j <= K; j++) {
       const f = j / K * (N - 1), a0 = Math.floor(f), v = vals[a0] + (vals[Math.min(N - 1, a0 + 1)] - vals[a0]) * (f - a0);
       pts.push([X0 + (X1 - X0) * j / K, BASE - (MINH + v * (MAXH - MINH))]);
@@ -1185,15 +1136,15 @@ function frame() {
     line.lineTo(pts[K][0], pts[K][1]);
     const area = new Path2D(line); area.lineTo(X1, BASE); area.lineTo(X0, BASE); area.closePath();
     g.save();
-    g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(area);
-    g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
-    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
-    olStroke(line, 10);
+    g.globalAlpha = waveFill; g.fillStyle = vizFill; if (waveFill > 0) g.fill(area);
+    g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = waveWidth; g.lineJoin = 'round'; g.lineCap = 'round';
+    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = (14 + bass * 30 + glowBars * glowBlur) * waveGlow;
+    olStroke(line, waveWidth + 4);
     g.stroke(line);
     g.restore();
   } else if (vizMode === 'wavemir') {
     // Mirrored Smooth Wave: the same flowing curve above and below a centre line
-    const K = 126, top = [], bot = [];
+    const K = waveDetail, top = [], bot = [];
     for (let j = 0; j <= K; j++) {
       const f = j / K * (N - 1), a0 = Math.floor(f), v = vals[a0] + (vals[Math.min(N - 1, a0 + 1)] - vals[a0]) * (f - a0);
       const h = (MINH + v * (MAXH - MINH)) / 2, x = X0 + (X1 - X0) * j / K;
@@ -1207,10 +1158,10 @@ function frame() {
     const tl = new Path2D(); tl.moveTo(top[0][0], top[0][1]); seg(tl, top);
     const bl = new Path2D(); bl.moveTo(bot[0][0], bot[0][1]); seg(bl, bot);
     g.save();
-    g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(body);
-    g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
-    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
-    olStroke(tl, 10); olStroke(bl, 10);
+    g.globalAlpha = waveFill; g.fillStyle = vizFill; if (waveFill > 0) g.fill(body);
+    g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = waveWidth; g.lineJoin = 'round'; g.lineCap = 'round';
+    g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = (14 + bass * 30 + glowBars * glowBlur) * waveGlow;
+    olStroke(tl, waveWidth + 4); olStroke(bl, waveWidth + 4);
     g.stroke(tl); g.stroke(bl);
     g.restore();
   } else if (vizMode === 'dots') {
@@ -1241,25 +1192,27 @@ function frame() {
     g.globalAlpha = 1;
   } else if (vizMode === 'ridge') {
     // Ridgeline: the last moments of the spectrum, stacked back to front, scrolling away smoothly
-    const HZ = 14, step = 20, amp = 175;
+    const HZ = 14, step = ridgeStep, amp = ridgeAmp;
     ridgeAcc += mdt;
-    if (ridgeAcc >= 1 / HZ) { ridgeAcc = Math.min(ridgeAcc - 1 / HZ, 1 / HZ); ridgeHist.unshift(ridgePaths(vals, amp)); if (ridgeHist.length > RIDGE_ROWS - 1) ridgeHist.pop(); }
+    if (ridgeAcc >= 1 / HZ) { ridgeAcc = Math.min(ridgeAcc - 1 / HZ, 1 / HZ); ridgeHist.unshift(ridgePaths(vals, amp)); }
+    while (ridgeHist.length > ridgeRows - 1) ridgeHist.pop();   // also trims the history when the Rows slider goes down
     const phase = Math.min(1, ridgeAcc * HZ);   // how far the rows have slid toward the next slot
     g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = vizFill;
-    const drawRow = (rp, by, fade) => {
+    const drawRow = (rp, by, fade, glow) => {   // glow = the front line only: a glow on every row would be far too heavy
       g.save(); g.translate(0, by);
       g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
       g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
       g.restore();
-      olStroke(rp.curve, 3 + 1.5 * fade, fade);
-      g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
+      olStroke(rp.curve, (3 + 1.5 * fade) * ridgeLine, fade);
+      if (glow && glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
+      g.globalAlpha = fade; g.lineWidth = (1.5 + 1.5 * fade) * ridgeLine; g.stroke(rp.curve);
       g.restore();
     };
     for (let j = ridgeHist.length - 1; j >= 0; j--) {
       const pos = j + phase;
-      drawRow(ridgeHist[j], BASE - pos * step, Math.pow(Math.max(0, 1 - pos / (RIDGE_ROWS - 1)), 0.8));
+      drawRow(ridgeHist[j], BASE - pos * step, Math.pow(Math.max(0, 1 - pos / (ridgeRows - 1)), 0.8));
     }
-    drawRow(ridgePaths(vals, amp), BASE, 1);
+    drawRow(ridgePaths(vals, amp), BASE, 1, true);
     g.globalAlpha = 1;
   }
 
@@ -1368,6 +1321,12 @@ $('snapshotBtn').onclick = () => {
 // --- Video Export via MediaRecorder ---
 const REC_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const recActive = () => mediaRecorder && mediaRecorder.state !== 'inactive';
+let recWasHidden = false;   // browsers throttle background tabs, which makes a real-time recording drop frames
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (recActive()) recWasHidden = true; return; }
+  if (recWasHidden && recActive()) notify('This tab was in the background while recording, so the video may have dropped frames. Keep the tab visible until a recording finishes.', true);
+  recWasHidden = false;
+});
 const EXPORT_FORMATS = [['WebM (VP9)', 'video/webm;codecs=vp9,opus'], ['WebM (VP8)', 'video/webm;codecs=vp8,opus'], ['WebM (browser default)', 'video/webm'],
   ['MP4 (H.264)', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2'], ['MP4 (browser default)', 'video/mp4'], ['WebM (AV1)', 'video/webm;codecs=av1,opus']];
 if (typeof MediaRecorder !== 'undefined') {   // only offer what this browser can actually record; the first one is the default
@@ -1459,6 +1418,7 @@ function getSettings(withText) {
     useGrad: useGradient, useBgGrad: useBgGradient, bgAngle, overlay: overlayColors, autoCycle: autoColorCycle,
     cycleSpeed, rainbow: { on: rainbow, move: rbMove, dir: rbDir, speed: rbSpeed },
     mode: vizMode, circ: { radius: circRadius, length: circLength, width: circWidth, count: circCount, sym: circSym }, mir: { count: mirCount }, dots: { count: dotsCount, peak: dotsPeak },
+    wave: { width: waveWidth, fill: waveFill, glow: waveGlow, detail: waveDetail }, ridge: { rows: ridgeRows, step: ridgeStep, amp: ridgeAmp, line: ridgeLine },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
     stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }, bands: { ...bandCfg }
@@ -1477,6 +1437,9 @@ function applySettings(p) {
   const c = p.circ || {};
   setCtl('circRadius', c.radius); setCtl('circLength', c.length); setCtl('circWidth', c.width); setCtl('circCount', c.count); setCtl('circSym', c.sym);
   setCtl('mirCount', (p.mir || {}).count); setCtl('dotsCount', (p.dots || {}).count); setCtl('dotsPeak', (p.dots || {}).peak);
+  const wv = p.wave || {}, rd = p.ridge || {};
+  setCtl('waveWidth', wv.width); setCtl('waveFill', wv.fill); setCtl('waveGlow', wv.glow); setCtl('waveDetail', wv.detail);
+  setCtl('ridgeRows', rd.rows); setCtl('ridgeStep', rd.step); setCtl('ridgeAmp', rd.amp); setCtl('ridgeLine', rd.line);
   const bs = p.bars || {}, gl = p.glow || {};
   setCtl('barShape', bs.shape); setCtl('barRound', bs.round); setCtl('barGap', bs.gap);
   setCtl('glowBlur', gl.blur); setCtl('glowBars', gl.bars); setCtl('glowCover', gl.cover); setCtl('glowText', gl.text);
@@ -1559,7 +1522,7 @@ const PRESETS = {
   }
 };
 { const sel = $('presetSelect'); sel.innerHTML = ''; Object.entries(PRESET_INFO).forEach(([k, v]) => sel.add(new Option(v[0], k))); }
-const NESTED = ['circ', 'rainbow', 'mir', 'dots', 'bars', 'glow', 'stars', 'particles'];
+const NESTED = ['circ', 'rainbow', 'mir', 'dots', 'wave', 'ridge', 'bars', 'glow', 'stars', 'particles'];
 // glow / bar-shape touches for some of the built-in looks
 Object.assign(PRESETS.cyberpunk, { glow: { blur: 28, bars: 0.7, cover: 0.4, text: 0.3 } });
 Object.assign(PRESETS.neon, { glow: { blur: 32, bars: 0.8, cover: 0.5, text: 0.4 } });
@@ -1576,6 +1539,63 @@ function applyPreset(key) {
   notify(isBuiltIn(key) ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.');
 }
 $('presetSelect').onchange = e => applyPreset(e.target.value);
+
+// Preset gallery: a small drawing of each look, built from the preset's own colours and mode (nothing is rendered live)
+const THUMB_H = [.35, .55, .8, .5, .9, .6, .4, .7, .95, .55, .45, .3];
+function presetThumb(key, uid) {
+  const p = { ...DEFAULTS, ...PRESETS[key] }, a = p.main, b = p.useGrad ? p.end : p.main;
+  const bg = p.useBgGrad ? `linear-gradient(${p.bgAngle}deg, ${p.bg}, ${p.bgEnd})` : p.bg;
+  const defs = `<defs><linearGradient id="pg${uid}" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>`;
+  const F = `url(#pg${uid})`; let body = '';
+  const m = p.mode;
+  if (m === 'circular') {
+    for (let i = 0; i < 32; i++) { const t = i / 32 * 6.2832, h = 3 + THUMB_H[i % 12] * 9; body += `<line x1="${(50 + Math.cos(t) * 11).toFixed(1)}" y1="${(26 + Math.sin(t) * 11).toFixed(1)}" x2="${(50 + Math.cos(t) * (11 + h)).toFixed(1)}" y2="${(26 + Math.sin(t) * (11 + h)).toFixed(1)}" stroke="${F}" stroke-width="1.6" stroke-linecap="round"/>`; }
+    body = body.replace(/stroke="url\([^)]+\)"/g, `stroke="${a}"`);   // a userSpaceOnUse-free gradient breaks on vertical lines, so rings use the main colour
+  } else if (m === 'mirrored') {
+    THUMB_H.forEach((h, i) => { body += `<rect x="${7 + i * 7.5}" y="${28 - h * 17}" width="5" height="${h * 34}" rx="2.5" fill="${F}"/>`; });
+  } else if (m === 'wave') {
+    body = `<path d="M4 46 C16 22 24 52 36 34 S58 14 68 30 S88 46 96 24 L96 52 L4 52Z" fill="${F}" opacity=".3"/><path d="M4 46 C16 22 24 52 36 34 S58 14 68 30 S88 46 96 24" fill="none" stroke="${F}" stroke-width="2.6" stroke-linecap="round"/>`;
+  } else if (m === 'wavemir') {
+    body = `<path d="M4 28 C16 14 24 38 36 22 S58 10 68 22 S88 32 96 16 L96 40 C88 52 70 38 58 36 S24 52 4 28Z" fill="${F}" opacity=".3"/><path d="M4 28 C16 14 24 38 36 22 S58 10 68 22 S88 32 96 16" fill="none" stroke="${F}" stroke-width="2.2" stroke-linecap="round"/><path d="M4 28 C24 52 36 36 58 36 S88 52 96 40" fill="none" stroke="${F}" stroke-width="2.2" stroke-linecap="round"/>`;
+  } else if (m === 'dots') {
+    for (let i = 0; i < 12; i++) for (let r = 0; r < 6; r++) body += `<circle cx="${9 + i * 7.5}" cy="${48 - r * 6.5}" r="2.2" fill="${F}" opacity="${r < Math.round(THUMB_H[i] * 6) ? 1 : .13}"/>`;
+  } else if (m === 'ridge') {
+    for (let r = 5; r >= 0; r--) { const y = 48 - r * 6; let d = `M4 ${y}`; THUMB_H.forEach((h, i) => { d += ` L${(4 + i * 8.7).toFixed(1)} ${(y - h * 10 * (1 - r * 0.1)).toFixed(1)}`; }); body += `<path d="${d} L96 ${y}" fill="${bg.startsWith('linear') ? p.bg : bg}" stroke="${F}" stroke-width="1.2" opacity="${(1 - r * 0.14).toFixed(2)}"/>`; }
+  } else {
+    THUMB_H.forEach((h, i) => { body += `<rect x="${7 + i * 7.5}" y="${50 - h * 34}" width="5" height="${h * 34}" fill="${F}"/>`; });
+  }
+  return `<span class="thumb" style="background:${bg}"><svg viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">${defs}${body}</svg></span>`;
+}
+function renderPresetGallery() {
+  const box = $('presetGallery'); if (!box) return;
+  box.innerHTML = '';
+  Array.from($('presetSelect').options).forEach((o, i) => {
+    if (!PRESETS[o.value]) return;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'preset-card'; btn.setAttribute('role', 'listitem'); btn.dataset.key = o.value;
+    btn.title = PRESET_INFO[o.value] ? PRESET_INFO[o.value][1] : 'Custom preset';
+    btn.innerHTML = presetThumb(o.value, i) + '<span class="name"></span>';
+    btn.querySelector('.name').textContent = o.textContent;
+    btn.onclick = () => { $('presetSelect').value = o.value; applyPreset(o.value); };
+    box.append(btn);
+  });
+}
+new MutationObserver(renderPresetGallery).observe($('presetSelect'), { childList: true });   // custom presets being saved or deleted
+renderPresetGallery();
+
+// Essentials / All settings: first-time visitors see fewer panels (the technical ones are tagged data-adv). The choice is remembered.
+{
+  const KEY = 'nebulaSettingsView';
+  let all = false; try { all = localStorage.getItem(KEY) === 'all'; } catch (e) { }
+  const show = v => {
+    all = v; document.body.classList.toggle('essentials', !v);
+    $('viewEssentials').classList.toggle('on', !v); $('viewAll').classList.toggle('on', v);
+    $('viewEssentials').setAttribute('aria-pressed', String(!v)); $('viewAll').setAttribute('aria-pressed', String(v));
+    try { localStorage.setItem(KEY, v ? 'all' : 'essentials'); } catch (e) { }
+  };
+  $('viewEssentials').onclick = () => show(false); $('viewAll').onclick = () => show(true);
+  show(all);
+}
 
 // custom presets = everything in PRESETS that is not built in; they are part of every undo step
 const isBuiltIn = k => Object.prototype.hasOwnProperty.call(PRESET_INFO, k);
@@ -1623,6 +1643,7 @@ const projectSchema = () => ({
   artist: str, title: str, extra: str, main: hex, end: hex, bg: hex, bgEnd: hex, useGrad: bool, useBgGrad: bool, bgAngle: num(0, 360), overlay: bool, autoCycle: bool, cycleSpeed: rg('cycleSpeed'),
   rainbow: { on: bool, move: bool, dir: oneOf([1, -1]), speed: rg('rbSpeed') }, mode: oneOf(MODES),
   circ: { radius: rg('circRadius'), length: rg('circLength'), width: rg('circWidth'), count: rg('circCount'), sym: bool }, mir: { count: rg('mirCount') }, dots: { count: rg('dotsCount'), peak: bool },
+  wave: { width: rg('waveWidth'), fill: rg('waveFill'), glow: rg('waveGlow'), detail: rg('waveDetail') }, ridge: { rows: rg('ridgeRows'), step: rg('ridgeStep'), amp: rg('ridgeAmp'), line: rg('ridgeLine') },
   bars: { shape: sel('barShape'), round: rg('barRound'), gap: rg('barGap') }, glow: { blur: rg('glowBlur'), bars: rg('glowBars'), cover: rg('glowCover'), text: rg('glowText') },
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
@@ -1687,6 +1708,8 @@ function randomizeSettings() {
     bars: { shape: pick(['rect', 'rounded', 'capsule', 'beveled']), round: R('barRound', 0.15, 0.8), gap: R('barGap', 0.1, 0.55) },
     glow: { blur: R('glowBlur', 0.15, 0.6), bars: chance(0.5) ? R('glowBars', 0.3, 0.9) : 0, cover: chance(0.3) ? R('glowCover', 0.3, 0.8) : 0, text: chance(0.3) ? R('glowText', 0.3, 0.8) : 0 },
     mir: { count: R('mirCount', 0.2, 0.9) }, dots: { count: R('dotsCount', 0.2, 0.8), peak: chance(0.7) },
+    wave: { width: R('waveWidth', 0.15, 0.6), fill: R('waveFill', 0.1, 0.7), glow: R('waveGlow', 0.4, 1), detail: R('waveDetail', 0.2, 0.8) },
+    ridge: { rows: R('ridgeRows', 0.2, 0.8), step: R('ridgeStep', 0.2, 0.7), amp: R('ridgeAmp', 0.3, 0.8), line: R('ridgeLine', 0.2, 0.6) },
     sens: R('sens', 0.35, 0.7),
     bassPulse: chance(0.8), pulseAmt: R('pulseAmt', 0.1, 0.6), bgReactive: chance(0.4), bgPulse: R('bgPulseAmt', 0.2, 0.7),
     stars: { on: chance(0.85), count: R('starDensity', 0.05, 0.35), speed: R('starSpeed', 0.1, 0.6), boost: R('starBoost', 0.1, 0.6), flash: chance(0.8), light: R('starLight', 0.2, 0.5), angle: Math.round(rnd(0, 360)), color: pick(['white', 'white', 'main', 'gradient', 'rainbow']) },

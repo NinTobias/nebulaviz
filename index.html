@@ -5,8 +5,9 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<title>Nebula Visualizer Studio</title>
-	<link rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800&family=Oswald:wght@400;700&family=Bebas+Neue&family=Playfair+Display:wght@400;700&family=Orbitron:wght@400;700&family=Pacifico&display=swap">
+	<!-- Self-hosted fonts (run "npm run fonts" once, see README). Until fonts/fonts.css exists, the page falls back to Google Fonts. -->
+	<link rel="stylesheet" href="fonts/fonts.css"
+		onerror="this.onerror=null;var l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800&amp;family=Oswald:wght@400;700&amp;family=Bebas+Neue&amp;family=Playfair+Display:wght@400;700&amp;family=Orbitron:wght@400;700&amp;family=Pacifico&amp;display=swap';document.head.appendChild(l)">
 	<link rel="stylesheet" href="style.css">
 </head>
 
@@ -54,6 +55,9 @@
 			</div>
 			<div class="choose-bar">
 				<label class="btn">Choose song<input type="file" id="song" accept="audio/*"></label>
+				<button class="btn" id="demoBtn" type="button"
+					title="Plays a short built-in tune, so you can try the visualizer without a song">▶ Try
+					demo</button>
 				<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
 				<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
 				<button class="btn" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
@@ -61,12 +65,19 @@
 					Redo</button>
 			</div>
 			<div id="songInfo" class="info" hidden></div>
-			<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
+			<div id="status">Choose a song to begin, or press Try demo. The visualizer studio is ready.</div>
 		</div>
 		<div class="groups">
-			<details class="group">
+			<div class="view-toggle" role="group" aria-label="How many settings to show">
+				<button class="btn on" id="viewEssentials" type="button" aria-pressed="true"
+					title="Hide the technical panels (frequency range, stars and particles)">Essentials</button>
+				<button class="btn" id="viewAll" type="button" aria-pressed="false" title="Show every panel">All
+					settings</button>
+			</div>
+			<details class="group" open>
 				<summary>Presets & Project</summary>
 				<div class="group-body">
+					<div id="presetGallery" class="preset-gallery" role="list" aria-label="Preset looks"></div>
 					<div class="choose-bar">
 						<label class="btn preset-btn">Load Preset:
 							<select id="presetSelect">
@@ -123,6 +134,26 @@
 						<label class="sens">Bar count<input type="range" id="mirCount" min="16" max="160" step="1"
 								value="63"></label>
 					</div>
+					<div class="slider-col" id="waveOpts" hidden>
+						<label class="sens">Line width<input type="range" id="waveWidth" min="1" max="16" step="0.5"
+								value="6"></label>
+						<label class="sens">Fill<input type="range" id="waveFill" min="0" max="1" step="0.05"
+								value="0.3"></label>
+						<label class="sens">Line glow<input type="range" id="waveGlow" min="0" max="1" step="0.05"
+								value="1"></label>
+						<label class="sens">Detail<input type="range" id="waveDetail" min="32" max="252" step="2"
+								value="126"></label>
+					</div>
+					<div class="slider-col" id="ridgeOpts" hidden>
+						<label class="sens">Rows<input type="range" id="ridgeRows" min="6" max="40" step="1"
+								value="14"></label>
+						<label class="sens">Row spacing<input type="range" id="ridgeStep" min="8" max="40" step="1"
+								value="20"></label>
+						<label class="sens">Peak height<input type="range" id="ridgeAmp" min="80" max="300" step="5"
+								value="175"></label>
+						<label class="sens">Line width<input type="range" id="ridgeLine" min="0.5" max="3" step="0.1"
+								value="1"></label>
+					</div>
 					<div class="slider-col" id="dotsOpts" hidden>
 						<label class="sens">Bar count<input type="range" id="dotsCount" min="16" max="100" step="1"
 								value="63"></label>
@@ -160,7 +191,7 @@
 					</div>
 				</div>
 			</details>
-			<details class="group" id="bandsGroup">
+			<details class="group" id="bandsGroup" data-adv>
 				<summary>Frequency range</summary>
 				<div class="group-body">
 					<canvas id="bandGraph" class="band-graph" width="800" height="200"
@@ -515,7 +546,7 @@
 						group, and both can be used together.</div>
 				</div>
 			</details>
-			<details class="group">
+			<details class="group" data-adv>
 				<summary>Stars & Particles</summary>
 				<div class="group-body">
 					<div class="settings-row">
@@ -577,10 +608,10 @@
 						<label class="toggle">Format <select id="expFormat" class="btn"></select></label>
 						<label class="toggle">Resolution
 							<select id="expRes" class="btn">
-								<option value="1280x720">1280 × 720</option>
-								<option value="1920x1080" selected>1920 × 1080</option>
-								<option value="2560x1440">2560 × 1440</option>
-								<option value="3840x2160">3840 × 2160</option>
+								<option value="1280x720">1280 × 720 (downscaled)</option>
+								<option value="1920x1080" selected>1920 × 1080 (native)</option>
+								<option value="2560x1440">2560 × 1440 (upscaled)</option>
+								<option value="3840x2160">3840 × 2160 (upscaled)</option>
 							</select>
 						</label>
 						<label class="toggle">Frame rate
@@ -599,8 +630,13 @@
 							</select>
 						</label>
 					</div>
-					<div class="hint">Applies to the next recording (camera button on the player). The picture is drawn
-						at 1920 × 1080 and scaled, so 4K is an upscale. Only formats your browser can record are listed.
+					<div class="hint">Applies to the next recording (the video button on the player). The picture is
+						drawn at
+						1920 × 1080 and scaled, so 1080p is native and the larger sizes are upscaled. Recording runs in
+						real
+						time: keep this tab visible until it finishes, or the browser may drop frames. Only formats your
+						browser
+						can record are listed.
 					</div>
 				</div>
 			</details>
@@ -621,6 +657,8 @@
 
 	<div id="toast" role="status" aria-live="polite"></div>
 
+	<script src="id3.js"></script>
+	<script src="demo.js"></script>
 	<script src="script.js"></script>
 </body>
 
