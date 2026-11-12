@@ -312,6 +312,81 @@
 				</div>
 			</details>
 			<details class="group">
+				<summary>Cover</summary>
+				<div class="group-body">
+					<div class="settings-row">
+						<label class="toggle" title="When off, the text slides left into the free space."><input
+								type="checkbox" id="coverOn" checked> Show cover</label>
+						<label class="toggle">Shape
+							<select id="coverShape" class="btn">
+								<option value="square">Square</option>
+								<option value="rounded">Rounded square</option>
+								<option value="circle">Circle</option>
+								<option value="squircle">Squircle</option>
+							</select>
+						</label>
+						<label class="toggle"
+							title="Crop to fill = the image fills the shape and the edges are cut off. Fit = the whole image is shown, with black bars where it does not fill the shape.">Fit
+							<select id="coverFit" class="btn">
+								<option value="crop">Crop to fill</option>
+								<option value="fit">Fit (letterbox)</option>
+							</select>
+						</label>
+					</div>
+					<div class="slider-col">
+						<label class="sens">Size<input type="range" id="coverSize" min="50" max="150" step="5"
+								value="100"></label>
+						<label class="sens">Offset X<input type="range" id="coverX" min="-400" max="400" step="5"
+								value="0"></label>
+						<label class="sens">Offset Y<input type="range" id="coverY" min="-300" max="300" step="5"
+								value="0"></label>
+						<label class="sens">Corner radius<input type="range" id="coverRadius" min="0" max="50" step="1"
+								value="15" disabled></label>
+						<label class="sens">Opacity<input type="range" id="coverOpacity" min="0" max="1" step="0.05"
+								value="1"></label>
+						<label class="toggle"
+							title="On: moving or resizing the cover carries the text with it. Off: the text stays where it is."><input
+								type="checkbox" id="coverAttach" checked> Attach text to cover</label>
+					</div>
+					<div class="subhead">Border</div>
+					<div class="slider-col">
+						<label class="sens">Width<input type="range" id="coverBw" min="0" max="20" step="1"
+								value="0"></label>
+					</div>
+					<div class="settings-row">
+						<label class="toggle"><input type="color" id="coverBorderColor" value="#ffffff" disabled> Border
+							color</label>
+						<label class="toggle"
+							title="Paint the border with the same colors (gradient or rainbow) as the visualizer."><input
+								type="checkbox" id="coverBorderMatch" disabled> Match visualizer color</label>
+					</div>
+					<div class="subhead">Shadow</div>
+					<div class="slider-col">
+						<label class="sens">Opacity<input type="range" id="coverShOp" min="0" max="1" step="0.05"
+								value="0"></label>
+						<label class="sens">Blur<input type="range" id="coverShBlur" min="0" max="60" step="1"
+								value="12" disabled></label>
+						<label class="sens">Offset X<input type="range" id="coverShX" min="-30" max="30" step="1"
+								value="0" disabled></label>
+						<label class="sens">Offset Y<input type="range" id="coverShY" min="-30" max="30" step="1"
+								value="6" disabled></label>
+					</div>
+					<div class="settings-row">
+						<label class="toggle"><input type="color" id="coverShColor" value="#000000" disabled> Shadow
+							color</label>
+					</div>
+					<div class="subhead">Placeholder (no cover image)</div>
+					<div class="settings-row">
+						<label class="toggle"><input type="checkbox" id="coverNote" checked> Show ♪</label>
+						<label class="toggle"><input type="color" id="coverNoteColor" value="#ffffff"> Note
+							color</label>
+					</div>
+					<div class="hint">Opacity 0% in the shadow = no shadow. The cover glow has its own setting in the
+						Glow group. In circular mode the cover sits inside the ring: Size and Offset are relative to
+						that spot, and the text stays centered under the ring.</div>
+				</div>
+			</details>
+			<details class="group">
 				<summary>Text</summary>
 				<div class="group-body">
 					<div class="settings-row">
