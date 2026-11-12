@@ -41,6 +41,19 @@ const inkFor = hex => {
 };
 const midHex = (a, b) => '#' + rgbOf(a).map((v, i) => Math.round((v + rgbOf(b)[i]) / 2).toString(16).padStart(2, '0')).join('');
 const lumHex = hex => { const l = rgbOf(hex).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
+const hslHex = (h, sat, l) => { l /= 100; const a = sat / 100 * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }; return '#' + f(0) + f(8) + f(4); };
+const RB_SAMPLES = Array.from({ length: 12 }, (_, k) => hslHex(k * 30, 100, 55));   // the rainbow always shows the whole spectrum, so these stand in for it
+let bgImgRefs = [];   // representative colors of the background image (dark ... light), computed once when the image is loaded
+function sampleBgImage(img) {
+  if (!img) { bgImgRefs = []; return; }
+  const W = 32, H = 18, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true });
+  const sc = Math.max(W / img.width, H / img.height), w = img.width * sc, h = img.height * sc;
+  x.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  let d; try { d = x.getImageData(0, 0, W, H).data; } catch (e) { bgImgRefs = ['#000000', '#ffffff']; return; }
+  const cells = []; for (let i = 0; i < d.length; i += 4) { const hx = '#' + [d[i], d[i + 1], d[i + 2]].map(v => v.toString(16).padStart(2, '0')).join(''); cells.push([lumHex(hx), hx]); }
+  cells.sort((p, q) => p[0] - q[0]);
+  bgImgRefs = [0.03, 0.25, 0.5, 0.75, 0.97].map(p => cells[Math.min(cells.length - 1, Math.floor(p * cells.length))][1]);
+}
 const crOf = (a, b) => { const x = lumHex(a), y = lumHex(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 const pickerState = {
   main: { h: 52, s: 0.96, v: 0.95 },
@@ -155,11 +168,12 @@ $('song').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   const gen = ++loadGen;
   setup();
-  stopRecording();
+  const prevStatus = $('status').textContent;
   $('status').textContent = 'Decoding audio…';
   try {
     const decoded = await ctx.decodeAudioData(await f.arrayBuffer());
     if (gen !== loadGen) return;   // a newer selection started: drop this stale result
+    stopRecording();   // only once the new song is really replacing the old one
     buf = decoded;
     $('title').value = f.name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
     const mm = Math.floor(buf.duration / 60), ss = Math.floor(buf.duration % 60);
@@ -172,22 +186,25 @@ $('song').onchange = async e => {
     if ($('presetRandomize').checked) randomizeSettings();
   } catch (err) {
     if (gen !== loadGen) return;
+    $('status').textContent = buf ? prevStatus : 'No song loaded.';   // failed replacement: the previous song and its status stay as they were
     console.error('Audio decode failed:', { name: f.name, type: f.type || '(unknown)', size: f.size }, err);
     notify(`Could not decode "${f.name}" (${f.type || 'unknown type'}${err && err.message ? ': ' + err.message : ''}). ${buf ? 'Your previous song is still loaded.' : 'No song is loaded.'} Supported formats depend on your browser.`, true);
   }
 };
 
-const IMG_MAX_BYTES = 25 * 1048576, IMG_MAX_PX = 4096;
+const IMG_MAX_BYTES = 25 * 1048576, IMG_MAX_PX = 4096;   // hard cap; the real target is smaller (see loadImage)
 function loadImage(f, what, cb) {   // size limit, error messages, and downscaling of huge images
   if (!f.type.startsWith('image/')) { notify(`That file is not an image.`, true); return; }
   if (f.size > IMG_MAX_BYTES) { notify(`That ${what} image is larger than 25 MB.`, true); return; }
   const url = URL.createObjectURL(f), im = new Image();
   im.onload = () => {
     URL.revokeObjectURL(url);
-    const w = im.naturalWidth, h = im.naturalHeight, m = Math.max(w, h);
+    const w = im.naturalWidth, h = im.naturalHeight;
     if (!w || !h) { notify(`Could not read that ${what} image.`, true); return; }
+    // keep only the pixels that can ever be drawn: the background is cover-fitted to 1920x1080, the cover art is drawn small
+    const k = Math.min(1, IMG_MAX_PX / Math.max(w, h), what === 'background' ? Math.max(1920 / w, 1080 / h) : 1024 / Math.max(w, h));
     let out = im;
-    if (m > IMG_MAX_PX) { const k = IMG_MAX_PX / m, c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); out = c; }
+    if (k < 1) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k)); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); out = c; }
     cb(out);
   };
   im.onerror = () => { URL.revokeObjectURL(url); notify(`Could not load that ${what} image. It may be corrupt or in an unsupported format.`, true); };
@@ -195,9 +212,9 @@ function loadImage(f, what, cb) {   // size limit, error messages, and downscali
 }
 $('backgroundImage').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  loadImage(f, 'background', im => { backgroundImg = im; syncBgImageUI(); commitHistory(); });
+  loadImage(f, 'background', im => { backgroundImg = im; sampleBgImage(im); syncBgImageUI(); commitHistory(); });
 };
-$('removeBackgroundImage').onclick = () => { backgroundImg = null; $('backgroundImage').value = ''; syncBgImageUI(); commitHistory(); };
+$('removeBackgroundImage').onclick = () => { backgroundImg = null; sampleBgImage(null); $('backgroundImage').value = ''; syncBgImageUI(); commitHistory(); };
 function syncBgImageUI() {   // an image covers the color/gradient, so those controls are dimmed (not disabled)
   $('bgColorOpts').classList.toggle('off', !!backgroundImg);
   $('bgImageHint').hidden = !backgroundImg;
@@ -780,10 +797,23 @@ function frame() {
   const barGradient = g.createLinearGradient(X0, 0, X1, 0);
   barGradient.addColorStop(0, c1); barGradient.addColorStop(1, c2);
   // Contrast safety: when the chosen colors are too close to the background an outline in the opposite tone is added. The colors themselves are never changed.
-  const bgRefs = backgroundImg ? [] : useBgGradient ? [backgroundColor, backgroundEndColor] : [backgroundColor];
+  // Backgrounds are judged by several reference colors: gradient ends + middle, or dark..light samples of the image. If they call for different
+  // outline tones (light on dark parts, dark on light parts) a two-tone outline is used, so it stays visible wherever the visualizer sits.
+  const bgRefs = backgroundImg && bgImgRefs.length ? bgImgRefs : useBgGradient ? [backgroundColor, lerpHex(backgroundColor, backgroundEndColor, 0.5), backgroundEndColor] : [backgroundColor];
   const needOL = cr => Math.min(1, Math.max(0, (3 - cr) / 1.5));
-  const ol = rainbow ? 0 : needOL(Math.min(...[c1, c2].flatMap(a => bgRefs.map(b => crOf(a, b)))));
-  const olCol = bgRefs.length ? inkFor(lerpHex(bgRefs[0], bgRefs[bgRefs.length - 1], 0.5)) : '#000';
+  const fills = rainbow ? RB_SAMPLES : [c1, c2];
+  const ol = needOL(Math.min(...fills.flatMap(a => bgRefs.map(b => crOf(a, b)))));
+  const inks = new Set(bgRefs.map(inkFor)), twoTone = inks.size > 1, olCol = twoTone ? '#000' : inks.values().next().value;
+  // stroke the given path (or the current path when none) as an outline; twoTone = light halo under a dark line
+  const olStroke = (path, lw, alpha = 1) => {
+    if (ol <= 0) return;
+    g.save(); g.shadowBlur = 0; g.lineJoin = 'round';
+    const run = () => path ? g.stroke(path) : g.stroke();
+    g.globalAlpha = alpha * ol;
+    if (twoTone) { g.strokeStyle = '#fff'; g.lineWidth = lw + 4; run(); }
+    g.strokeStyle = olCol; g.lineWidth = lw; run();
+    g.restore();
+  };
 
   // Rainbow: every hue across the bars (or around the ring); rbOffset slides it
   let vizFill = barGradient;
@@ -809,7 +839,7 @@ function frame() {
     g.save();
     if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.fillStyle = vizFill; g.fill(all);   // all bars as one path = one glow pass instead of 63
-    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 2; g.stroke(all); g.globalAlpha = 1; }
+    olStroke(all, 2);
     g.restore();
     for (const [x, y, w2, h, o] of outlined) {
       const lw = 1 + o, p = new Path2D();
@@ -828,7 +858,7 @@ function frame() {
       g.moveTo(CIRC_CX + Math.cos(a) * R, CIRC_CY + Math.sin(a) * R);
       g.lineTo(CIRC_CX + Math.cos(a) * (R + l), CIRC_CY + Math.sin(a) * (R + l));
     }
-    if (ol > 0) { g.save(); g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = circWidth + 4; g.stroke(); g.restore(); }
+    olStroke(null, circWidth + 4);
     g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.stroke(); g.restore(); g.lineCap = 'butt';
   } else if (vizMode === 'mirrored') {
@@ -842,7 +872,7 @@ function frame() {
     g.save();
     if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.fillStyle = vizFill; g.fill(all);
-    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 2; g.stroke(all); g.globalAlpha = 1; }
+    olStroke(all, 2);
     g.restore();
   } else if (vizMode === 'wave') {
     // Smooth Wave: one flowing glowing curve through all bands, with a soft fill underneath
@@ -859,7 +889,7 @@ function frame() {
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(area);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
     g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
-    if (ol > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 10; g.stroke(line); g.restore(); }
+    olStroke(line, 10);
     g.stroke(line);
     g.restore();
   } else if (vizMode === 'wavemir') {
@@ -881,7 +911,7 @@ function frame() {
     g.globalAlpha = 0.3; g.fillStyle = vizFill; g.fill(body);
     g.globalAlpha = 1; g.strokeStyle = vizFill; g.lineWidth = 6; g.lineJoin = 'round'; g.lineCap = 'round';
     g.shadowColor = rainbow ? '#ffffff' : c1; g.shadowBlur = 14 + bass * 30 + glowBars * glowBlur;
-    if (ol > 0) { g.save(); g.shadowBlur = 0; g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 10; g.stroke(tl); g.stroke(bl); g.restore(); }
+    olStroke(tl, 10); olStroke(bl, 10);
     g.stroke(tl); g.stroke(bl);
     g.restore();
   } else if (vizMode === 'dots') {
@@ -906,7 +936,7 @@ function frame() {
     g.globalAlpha = 1;
     g.save(); if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
     g.fill(lit);
-    if (ol > 0) { g.globalAlpha = ol; g.strokeStyle = olCol; g.lineWidth = 1.5; g.stroke(lit); g.globalAlpha = 1; }
+    olStroke(lit, 1.5);
     g.restore();
     if (dotsPeak) { g.globalAlpha = 0.85; g.fill(pk); }
     g.globalAlpha = 1;
@@ -922,7 +952,7 @@ function frame() {
       g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
       g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
       g.restore();
-      if (ol > 0) { g.globalAlpha = fade * ol; g.strokeStyle = olCol; g.lineWidth = 4.5 + 1.5 * fade; g.stroke(rp.curve); g.strokeStyle = vizFill; }
+      olStroke(rp.curve, 4.5 + 1.5 * fade, fade);
       g.globalAlpha = fade; g.lineWidth = 1.5 + 1.5 * fade; g.stroke(rp.curve);
       g.restore();
     };
@@ -968,10 +998,10 @@ function frame() {
   const lineY = i => yy[0] + (yy[i] - yy[0]) * ts + T.y;                                                  // spacing between lines grows with the size
   const sp = T.space / 100, shRGB = rgbOf(T.shColor);
   g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
-  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read
+  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // (rainbow text is judged with the rainbow samples via ol)   // text outline only when the text would be hard to read
   const drawLine = (txt, y) => {
     let drawn = false;
-    if (tol > 0) { g.save(); g.globalAlpha = tol; g.strokeStyle = olCol; g.lineWidth = 6; g.lineJoin = 'round'; g.strokeText(txt, ax, y); g.restore(); }
+    if (tol > 0) { g.save(); g.globalAlpha = tol; g.lineJoin = 'round'; if (twoTone) { g.strokeStyle = '#fff'; g.lineWidth = 10; g.strokeText(txt, ax, y); } g.strokeStyle = olCol; g.lineWidth = 6; g.strokeText(txt, ax, y); g.restore(); }
     if (T.shOp > 0) {   // drop shadow
       g.save(); g.shadowColor = `rgba(${shRGB[0]},${shRGB[1]},${shRGB[2]},${T.shOp})`; g.shadowBlur = T.shBlur; g.shadowOffsetX = T.shX; g.shadowOffsetY = T.shY;
       g.fillText(txt, ax, y); g.restore(); drawn = true;
@@ -1031,11 +1061,12 @@ $('recBtn').onclick = () => {
   if (!buf) { notify('Load a song first, then press play and start recording.', true); return; }
   if (!playing) { notify('Press play first, then start recording.', true); return; }
   if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { notify('Video export is not supported in this browser.', true); return; }
+  let stream = null;   // outer scope: the catch below can always stop it, even if setup throws before finish() exists
   try {
     const [expW, expH] = $('expRes').value.split('x').map(Number), expFps = +$('expFps').value;
     let capCanvas = cv; expCanvas = expCtx = null;
     if (expW !== cv.width || expH !== cv.height) { expCanvas = document.createElement('canvas'); expCanvas.width = expW; expCanvas.height = expH; expCtx = expCanvas.getContext('2d'); capCanvas = expCanvas; }
-    const stream = capCanvas.captureStream(expFps);
+    stream = capCanvas.captureStream(expFps);
     recDest = ctx.createMediaStreamDestination();
     outGain.connect(recDest);   // export follows the volume slider / mute, and survives seeks (new sources feed outGain)
     recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
@@ -1069,7 +1100,7 @@ $('recBtn').onclick = () => {
     const kb = Math.round((rec.audioBitsPerSecond || 0) / 1000), mb = ((rec.videoBitsPerSecond || 0) / 1e6).toFixed(1);
     console.info('Recorder:', rec.mimeType, 'audio bps', rec.audioBitsPerSecond, 'video bps', rec.videoBitsPerSecond);
     notify(`Recording (${rec.mimeType || 'browser default'}; browser reports audio ${kb || '?'} kbps, video ${mb} Mbit/s). Pausing the song pauses the recording. Click the camera button again to stop and save.`);
-  } catch (err) { recCleanup(); notify('Video recording error: ' + err.message, true); }
+  } catch (err) { recCleanup(); if (stream) stream.getTracks().forEach(t => t.stop()); mediaRecorder = null; notify('Video recording error: ' + err.message, true); }
 };
 
 // --- Settings: one set of functions shared by presets, randomize, export and import ---
@@ -1196,6 +1227,15 @@ function applyPreset(key) {
 }
 $('presetSelect').onchange = e => applyPreset(e.target.value);
 
+// custom presets = everything in PRESETS that is not built in; they are part of every undo step
+const customPresets = () => Object.fromEntries(Object.entries(PRESETS).filter(([k]) => !PRESET_INFO[k]));
+function restoreCustomPresets(saved) {
+  const sel = $('presetSelect'), cur = sel.value;
+  Object.keys(PRESETS).forEach(k => { if (!PRESET_INFO[k]) delete PRESETS[k]; });
+  Array.from(sel.options).forEach(o => { if (!PRESET_INFO[o.value]) o.remove(); });
+  Object.entries(saved).forEach(([k, v]) => { PRESETS[k] = v; sel.add(new Option(v.__name || k, k)); });
+  sel.value = PRESETS[cur] ? cur : Object.keys(PRESET_INFO)[0];
+}
 $('savePresetBtn').onclick = () => {
   const name = (prompt('Enter preset name:') || '').trim();
   if (!name) return;
@@ -1204,10 +1244,12 @@ $('savePresetBtn').onclick = () => {
   const isNew = !PRESETS[key];
   if (!isNew && !confirm(`A preset named "${name}" already exists. Replace it?`)) return;
   const snap = getSettings(false); delete snap.text;   // like the built-in presets, never include text styling
+  snap.__name = name;   // display name, so undo/redo can rebuild the dropdown
   PRESETS[key] = snap;
   if (isNew) { const opt = document.createElement('option'); opt.value = key; opt.textContent = name; $('presetSelect').appendChild(opt); }
   $('presetSelect').value = key;
-  notify(`Preset "${name}" saved.`);
+  commitHistory();   // saving / replacing a preset is an undo step
+  notify(`Preset "${name}" saved. Undo (Ctrl+Z) removes it again.`);
 };
 
 $('exportJsonBtn').onclick = () => {
@@ -1265,7 +1307,8 @@ $('importJsonFile').onchange = e => {
       const bad = [], clean = cleanProject(projectSchema(), p, '', bad);
       if (!Object.keys(clean).length) throw new Error('no recognised settings found');
       applySettings(clean);   // only validated data ever reaches the live state
-      notify(bad.length ? `Project imported. Ignored invalid fields: ${bad.slice(0, 6).join(', ')}${bad.length > 6 ? '…' : ''}.` : 'Project settings imported.', bad.length > 0);
+      commitHistory();   // the import is one undo step
+      notify(bad.length ? `Project partly imported: ${bad.length} invalid setting${bad.length > 1 ? 's were' : ' was'} skipped and left unchanged (${bad.slice(0, 6).join(', ')}${bad.length > 6 ? ', …' : ''}). Everything else was applied. Undo (Ctrl+Z) reverts the import.` : 'Project settings imported.', bad.length > 0);
     } catch (err) { notify('Could not import that file: ' + err.message, true); }
     e.target.value = '';   // allow importing the same file again
   };
@@ -1302,14 +1345,14 @@ $('randomizeBtn').onclick = () => { randomizeSettings(); commitHistory(); notify
 // import, randomize, image drops/removals) adds one step; dragging a slider or wheel counts as one.
 // A step is only added when the USER changed something (the "dirty" flag), never because something moves by itself
 // (auto color cycling), which is what used to throw away the redo steps.
-const takeSnap = () => ({ s: JSON.stringify(getSettings(true)), cover: coverImg, bg: backgroundImg });
+const takeSnap = () => ({ s: JSON.stringify(getSettings(true)), cover: coverImg, bg: backgroundImg, presets: JSON.stringify(customPresets()) });
 const hist = [takeSnap()]; let hIdx = 0, restoring = false, dirty = false, hTimer;
 function syncHistUI() { $('undoBtn').disabled = hIdx <= 0; $('redoBtn').disabled = hIdx >= hist.length - 1; }
 function commitHistory() {   // save the current state as a new step (nothing happens if it equals the current step)
   clearTimeout(hTimer); dirty = false;
   if (restoring) return;
   const n = takeSnap(), c = hist[hIdx];
-  if (n.s === c.s && n.cover === c.cover && n.bg === c.bg) return;
+  if (n.s === c.s && n.cover === c.cover && n.bg === c.bg && n.presets === c.presets) return;
   hist.length = hIdx + 1; hist.push(n);
   if (hist.length > 100) hist.shift();
   hIdx = hist.length - 1; syncHistUI();
@@ -1325,7 +1368,8 @@ function jumpHistory(i) {
   try {
     const e = hist[i];
     applySettings(JSON.parse(e.s));
-    coverImg = e.cover; backgroundImg = e.bg; syncBgImageUI();
+    restoreCustomPresets(JSON.parse(e.presets));
+    coverImg = e.cover; backgroundImg = e.bg; sampleBgImage(backgroundImg); syncBgImageUI();
   } finally { restoring = false; }
   dirty = false; syncHistUI();
 }
