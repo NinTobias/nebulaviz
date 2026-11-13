@@ -1447,3 +1447,7 @@ body.dz-background #backgroundGroup {
   outline: 2px dashed var(--overlay-accent);
   outline-offset: 4px
 }
+/* live input: the button stays lit while the shared audio drives the visualizer */
+#liveBtn[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--overlay-accent)
+}

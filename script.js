@@ -20,6 +20,10 @@ let lo = [], hi = [], fcs = [], gains = [], hz = 1, kmax = 0, sm, amp;
 const cv = document.getElementById('c'), g = cv.getContext('2d');
 const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
+// Live input: audio captured from a shared browser tab or the system. It feeds the same analyser as a song; it is not played
+// back here, because the shared source already plays on its own.
+let liveMode = false, liveSrc = null, liveStream = null;
+const isActive = () => playing || liveMode;   // the visuals run while a song plays or live input is on
 let coverImg = null, backgroundImg = null, flash = 0;
 let coverSpot = null;   // where the cover is drawn on the 1920x1080 canvas (unpulsed), so a dropped image can land on it
 let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beatK1 = 2, beatStrength = 1, lastBurst = -9;   // beat detector state
@@ -196,8 +200,59 @@ function startAt(off) {
   icon(true);
 }
 
+// --- Live input: the audio of a shared browser tab (or the whole system, where the browser allows it) ---
+// Chrome and Edge offer tab audio; the picker is shown by the browser every time, and nothing starts without a click.
+function setLiveUI(on) {
+  const b = $('liveBtn');
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  b.textContent = on ? 'Stop live input' : 'Live input';
+  $('seek').disabled = on || !buf;
+  $('play').disabled = !on && !buf;   // while live input is on, play stops it
+  icon(on || playing);
+  $('play').setAttribute('aria-label', on ? 'Stop live input' : playing ? 'Pause' : 'Play');
+  syncQueueUI();
+}
+async function startLive() {
+  if (liveMode) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.isSecureContext) { notify('Live input needs a secure page (https or localhost) in a browser that can capture tab audio.', true); return; }
+  setup();
+  let stream;
+  try { stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); }   // the browser asks which tab or screen to share
+  catch (err) { if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') notify('Live input could not start: ' + err.message, true); return; }
+  stream.getVideoTracks().forEach(t => t.stop());   // only the audio is used
+  const track = stream.getAudioTracks()[0];
+  if (!track) { stream.getTracks().forEach(t => t.stop()); notify('No audio was shared. In the picker, choose a tab and tick "Share tab audio" (or choose the entire screen with system audio).', true); return; }
+  await ctx.resume();
+  if (playing) offset = Math.min(buf.duration, ctx.currentTime - startedAt);   // the song keeps its place
+  stopAll(); playing = false; icon(false);
+  vals.fill(0); parts.length = 0; sm.fill(0);
+  liveStream = stream;
+  liveSrc = ctx.createMediaStreamSource(new MediaStream([track]));
+  liveSrc.connect(analyser);
+  if (recDest) liveSrc.connect(recDest);
+  liveMode = true; recSync();
+  track.onended = () => stopLive('Sharing stopped. Live input is off.');   // the browser's own "Stop sharing" button
+  setLiveUI(true);
+  notify('Live input is on. The shared audio drives the visualizer; it keeps playing in its own tab.');
+}
+function stopLive(msg) {
+  if (!liveMode) return;
+  liveMode = false;
+  try { liveSrc.disconnect(); } catch (e) { }
+  if (liveStream) liveStream.getTracks().forEach(t => t.stop());
+  liveSrc = null; liveStream = null;
+  sm.fill(0); parts.length = 0;
+  setLiveUI(false); recSync();
+  if (msg) notify(msg);
+}
+$('liveBtn').onclick = () => { if (liveMode) stopLive('Live input stopped.'); else startLive(); };
+if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.isSecureContext) {
+  $('liveBtn').disabled = true;
+  $('liveBtn').title = !window.isSecureContext ? 'Live input needs a secure page (https or localhost)' : 'This browser cannot capture tab audio';
+}
+
 let loadGen = 0;
-let coverFromTag = false, autoArtist = null;   // so a new song may replace art / artist that came from the previous song's tags, but never the user's own choices
+let coverFromTag, autoArtist = null;   // so a new song may replace art / artist that came from the previous song's tags, but never the user's own choices
 
 // Decoded audio lives in memory as 32-bit floats: about 10-20x the size of an MP3 and 2x a 16-bit WAV. A very long file would exhaust the
 // browser's memory, so a rough estimate is checked first and the file is refused with a clear message instead of crashing the tab.
@@ -211,6 +266,7 @@ const fmtMB = b => Math.round(b / 1048576).toLocaleString('en') + ' MB';
 // Make a decoded buffer the current song (shared by file loading and the built-in demo)
 function installSong(decoded, { gen, title, label, size, tags = {}, edit = {} }) {   // edit = what the user typed for this track (kept on repeat or when coming back to it)
   stopRecording();   // only once the new song is really replacing the old one
+  stopLive();
   buf = decoded;
   $('demoBtn').hidden = true;   // the demo link is only an empty-state hint
   $('title').value = 'title' in edit ? edit.title : (tags.title || title);
@@ -297,11 +353,12 @@ function advanceAfterEnd() {
 
 function restartSong() { if (playing) startAt(0); else { offset = 0; ui(); } }
 function nextTrack() {
+  if (liveMode) return;   // the transport is locked while live input is on
   const n = queueNextIndex(queue.length, queueIdx, playlistLoop);
   if (buf && n >= 0) skipTo(n);
 }
 function prevTrack() {
-  if (!buf) return;
+  if (!buf || liveMode) return;
   const p = queuePrevIndex(queue.length, queueIdx, playlistLoop);
   // like a CD player: after 3 seconds, or on the first track, Previous restarts the song instead of going back
   if (cur() > 3 || p < 0) restartSong(); else skipTo(p);
@@ -370,8 +427,8 @@ function startQueueDrag(e, from, li) {
 }
 
 function syncQueueUI() {
-  $('prevBtn').disabled = !buf;
-  $('nextBtn').disabled = !buf || queueNextIndex(queue.length, queueIdx, playlistLoop) < 0;
+  $('prevBtn').disabled = !buf || liveMode;
+  $('nextBtn').disabled = !buf || liveMode || queueNextIndex(queue.length, queueIdx, playlistLoop) < 0;
   $('queueClear').disabled = !queue.length;
 }
 function renderQueue() {
@@ -447,7 +504,7 @@ function mediaH(m) { return m.videoHeight || m.naturalHeight || m.height; }
 // The object URL is kept on purpose, because the browser keeps animating the GIF from it.
 // Playback follows the song, like the stars and particles: while a loaded song is paused, videos stop and GIFs stop on their current frame.
 // With no song loaded everything keeps moving, so the look can be previewed.
-const isLive = () => !buf || playing;
+const isLive = () => !buf || isActive();
 function syncVideoPlayback() {
   const v = backgroundImg;
   if (!v || v.tagName !== 'VIDEO') return;
@@ -543,6 +600,7 @@ $('cover').onchange = e => {
 $('removeCoverImage').onclick = () => { coverImg = null; coverFromTag = false; $('cover').value = ''; commitHistory(); };
 
 $('play').onclick = async () => {
+  if (liveMode) { stopLive('Live input stopped.'); return; }
   if (!buf) return;
   await ctx.resume();
   if (playing) { offset = ctx.currentTime - startedAt; stopAll(); playing = false; icon(false); }
@@ -554,6 +612,7 @@ const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.fl
 const cur = () => !buf ? 0 : playing ? Math.min(buf.duration, ctx.currentTime - startedAt) : offset;
 let dragging = false;
 function ui() {
+  if (liveMode) { $('time').textContent = 'Live input'; return; }
   if (!buf) return;
   const t = dragging ? $('seek').value / 1000 * buf.duration : cur();
   if (!dragging) $('seek').value = t / buf.duration * 1000;
@@ -1120,7 +1179,7 @@ function notify(msg, err = false) {
 }
 
 function analyse(dt) {
-  if (!analyser || !playing) { flash *= 0.9; return 0; }
+  if (!analyser || !isActive()) { flash *= 0.9; return 0; }
   analyser.getFloatFrequencyData(freq);
   const r = dt / DTV, kt = Math.pow(M.tau, r);
   for (let k = 0; k < kmax; k++) {
@@ -1270,7 +1329,7 @@ function frame() {
   }
   // Stars and particles stand still while a loaded song is paused or stopped (so a recording resumes exactly where it left off).
   // With no song loaded yet they keep drifting, so the star settings can still be previewed.
-  const mdt = (playing || !buf) ? dt : 0;
+  const mdt = (isActive() || !buf) ? dt : 0;
   syncVideoPlayback();
   advanceGifs(mdt);
 
@@ -1621,11 +1680,11 @@ if (typeof MediaRecorder !== 'undefined') {   // only offer what this browser ca
   EXPORT_FORMATS.forEach(([name, type]) => { if (MediaRecorder.isTypeSupported(type)) { const o = document.createElement('option'); o.value = type; o.textContent = name; $('expFormat').appendChild(o); } });
 }
 if (!$('expFormat').options.length) $('expFormat').innerHTML = '<option value="">Browser default</option>';
-function recSync() {   // recording follows playback: paused song = paused recording
+function recSync() {   // recording follows playback: paused song = paused recording (live input never pauses it)
   if (!recActive()) return;
   try {
-    if (playing && mediaRecorder.state === 'paused') mediaRecorder.resume();
-    else if (!playing && mediaRecorder.state === 'recording') mediaRecorder.pause();
+    if (isActive() && mediaRecorder.state === 'paused') mediaRecorder.resume();
+    else if (!isActive() && mediaRecorder.state === 'recording') mediaRecorder.pause();
   } catch (e) { }
   $('recBtn').classList.toggle('paused', mediaRecorder.state === 'paused');
 }
@@ -1637,12 +1696,13 @@ function stopRecording(msg) {
 function recCleanup() {
   $('recBtn').classList.remove('rec', 'paused');
   try { if (outGain && recDest) outGain.disconnect(recDest); } catch (e) { }
+  try { if (liveSrc && recDest) liveSrc.disconnect(recDest); } catch (e) { }
   recDest = null; expCanvas = null; expCtx = null;
 }
 $('recBtn').onclick = () => {
   if (recActive()) { stopRecording(); return; }
-  if (!buf) { notify('Load a song first, then press play and start recording.', true); return; }
-  if (!playing) { notify('Press play first, then start recording.', true); return; }
+  if (!buf && !liveMode) { notify('Load a song first, then press play and start recording.', true); return; }
+  if (!isActive()) { notify('Press play first, then start recording.', true); return; }
   if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { notify('Video export is not supported in this browser.', true); return; }
   let stream = null;   // outer scope: the catch below can always stop it, even if setup throws before finish() exists
   try {
@@ -1653,6 +1713,7 @@ $('recBtn').onclick = () => {
     recDest = ctx.createMediaStreamDestination();
     outGain.connect(recDest);   // export follows the volume slider / mute, and survives seeks (new sources feed outGain)
     recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    if (liveSrc) liveSrc.connect(recDest);   // live input is recorded too
     const type = $('expFormat').value || REC_TYPES.find(t => MediaRecorder.isTypeSupported(t));
     const ext = type && type.includes('mp4') ? 'mp4' : 'webm';
     recChunks = [];

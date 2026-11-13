@@ -18,6 +18,7 @@ Audio, images and video never leave your browser. The only external request is f
 - **Layered styling**: solid, gradient, rainbow and auto-cycling colors; a cover with shape, fit, border and shadow; text with font, weight, alignment, shadow and glow.
 - **Backgrounds**: colors, gradients, still images, animated GIFs and videos. Videos and GIFs follow the song's playback state.
 - **Playlists**: queue several tracks, play next, repeat, and reorder by drag and drop.
+- **Live input**: visualize the audio of a shared browser tab, such as a YouTube or Spotify Web tab, without loading a file.
 - **Presets and projects**: 14 built-in presets, custom presets, validated JSON import and export, randomize, and 100 steps of undo and redo.
 - **Output**: PNG screenshots, and WebM or MP4 video at 720p to 4K, 24/30/60 fps, with selectable audio bitrate.
 - **Layout**: a pinned preview, full-screen mode, and a responsive layout from desktop to mobile.
@@ -28,6 +29,16 @@ Audio, images and video never leave your browser. The only external request is f
 2. Choose one or more songs, or drop them on the page. Title, artist, album, year, track, genre and embedded cover art are read from ID3 tags (MP3) or FLAC tags when present.
 3. Without a file, use **Play the built-in demo** under the player. The demo is synthesized in the browser.
 4. Pick a visualizer mode and a preset as a starting point, then adjust.
+
+## Live input
+
+**Live input** visualizes audio from another source instead of a file. Click **Live input** and choose a browser tab in the browser's picker, ticking **Share tab audio**. The shared audio drives the visualizer. It is not played back through Nebula, so it keeps playing in its own tab.
+
+- Requires a Chromium-based browser (Chrome or Edge) on desktop, served over HTTPS or from `localhost`. The button is disabled where tab audio cannot be captured.
+- Every start goes through the browser's picker, so live input never starts in the background. Stop it with the button or with the browser's own "Stop sharing" control.
+- While live input is on, the time display reads **Live input** and the transport is locked. Pressing Play or loading a song ends live input.
+- Recording captures the live audio, the same as a song.
+- Content the browser protects (DRM, for example) can arrive as silence. Streaming sites differ, so check the result in your own browser.
 
 ## Visualizer modes
 
@@ -141,6 +152,7 @@ flowchart LR
 
 - **Audio** is decoded by the browser. MP3, WAV, OGG, FLAC, M4A and AAC normally work. Tags are read from MP3 and any file with ID3v1 or ID3v2 tags, and from FLAC (Vorbis comments and cover art). Ogg and M4A tags are not read yet.
 - **Length.** Decoded audio is held in memory at roughly 10–20 times the file's size. Tracks that would exceed the browser's memory allowance are refused with a message instead of crashing the tab. In practice that is roughly an hour of stereo audio.
+- **Live input** depends on the browser's screen-capture support, which is strongest in Chromium on desktop. Other browsers may offer no audio.
 - **Images** are limited to 25 MB. Large images are downscaled to the size that can be drawn.
 - **Video backgrounds** are limited to 1 GB. Playback depends on the codecs your browser supports; MP4 (H.264) and WebM are the safest choices.
 - **GIFs** are limited to 25 MB, and their decoded frames to 600 MB. Very large GIFs are refused.
