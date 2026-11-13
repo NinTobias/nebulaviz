@@ -129,11 +129,8 @@
 					</div>
 					<div class="queue-count" id="queueCount"></div>
 					<ol class="queue-list" id="queueList" aria-label="Queue"></ol>
-					<div class="hint" id="queueHint">Choose several songs (or drop them on the page) to play them in
-						order. Use Add to queue to append, Play next to insert after the playing track. Drag a track by
-						its ⋮⋮ handle (or focus it and press the arrow keys) to change the order. Previous and
-						Next move through the list; keys P and N do the same. Songs are decoded one at a time, so a long
-						playlist uses no more memory than a single song.</div>
+					<div class="hint" id="queueHint">Choose songs (or drop them on the page) to build the playlist. Drag
+						⋮⋮ to reorder. Songs are decoded one at a time, so long playlists use no extra memory.</div>
 				</div>
 			</details>
 			<details class="group" open>
@@ -232,9 +229,7 @@
 				<div class="group-body">
 					<canvas id="bandGraph" class="band-graph" width="800" height="200"
 						aria-label="Frequency range graph. Drag the two handles to set the lowest and highest frequency, or use the sliders below."></canvas>
-					<div class="hint">Drag the handles, or use the sliders. The faint columns are the 63 bars; they
-						light up
-						with the music. Beat detection and star flashes keep listening to 30&ndash;150&nbsp;Hz, whatever
+					<div class="hint">Beat detection and star flashes always listen to 30&ndash;150&nbsp;Hz, whatever
 						the range.</div>
 					<div class="slider-col">
 						<label class="sens">Lowest<input type="range" id="bandLo" min="20" max="500" step="0.1"
@@ -431,8 +426,7 @@
 						<label class="sens">Text<input type="range" id="glowText" min="0" max="1" step="0.05"
 								value="0"></label>
 					</div>
-					<div class="hint">The glow uses your main color (or the rainbow hue). 0% turns a glow off. The
-						Ridgeline has no glow.</div>
+					<div class="hint">The Ridgeline has no glow.</div>
 				</div>
 			</details>
 			<details class="group">
@@ -505,9 +499,7 @@
 						<label class="toggle"><input type="color" id="coverNoteColor" value="#ffffff"> Note
 							color</label>
 					</div>
-					<div class="hint">Opacity 0% in the shadow = no shadow. The cover glow has its own setting in the
-						Glow group. In circular mode the cover sits inside the ring: Size and Offset are relative to
-						that spot, and the text stays centered under the ring.</div>
+					<div class="hint">In circular mode, Size and Offset are relative to the spot inside the ring.</div>
 				</div>
 			</details>
 			<details class="group">
@@ -578,8 +570,7 @@
 					<div class="settings-row">
 						<label class="toggle"><input type="color" id="textShColor" value="#000000"> Shadow color</label>
 					</div>
-					<div class="hint">Opacity 0% = no shadow. The glow behind the text has its own setting in the Glow
-						group, and both can be used together.</div>
+
 				</div>
 			</details>
 			<details class="group">
@@ -666,14 +657,8 @@
 							</select>
 						</label>
 					</div>
-					<div class="hint">Applies to the next recording (the video button on the player). The picture is
-						drawn at
-						1920 × 1080 and scaled, so 1080p is native and the larger sizes are upscaled. Recording runs in
-						real
-						time: keep this tab visible until it finishes, or the browser may drop frames. Only formats your
-						browser
-						can record are listed.
-					</div>
+					<div class="hint">Applies to the next recording. Keep this tab visible until it finishes, or frames
+						may drop.</div>
 				</div>
 			</details>
 		</div>
