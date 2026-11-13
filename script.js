@@ -2087,8 +2087,8 @@ syncHistUI();
 const AUDIO_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i;
 let dragDepth = 0;
 const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-// Audio always becomes the song / playlist. Images and videos land where they are dropped: the cover spot or the Cover panel
-// (images only), or the Background panel (images, GIFs and videos). A .json file imports a project.
+// Audio always becomes the song / playlist. An image dropped on the cover spot or the Cover panel becomes the cover;
+// any other image, GIF or video becomes the background. A .json file imports a project.
 const coverSpotAt = (x, y) => {
   const r = $('c').getBoundingClientRect();
   if (!coverSpot || !r.width) return false;
@@ -2122,7 +2122,7 @@ document.addEventListener('dragover', e => {
   e.preventDefault();
   const z = dropZone(e);
   document.body.classList.toggle('dz-cover', z === 'cover');
-  document.body.classList.toggle('dz-background', z === 'background');
+  document.body.classList.toggle('dz-background', z !== 'cover' && z !== 'playlist');   // the background is the default target
   placeDropSpot(z);
 });
 document.addEventListener('drop', e => {
@@ -2131,22 +2131,21 @@ document.addEventListener('drop', e => {
   const zone = dropZone(e), files = Array.from(e.dataTransfer.files);
   const audio = files.filter(isAudioFile);
   if (audio.length) { if (zone === 'playlist') addToQueue(audio, 'end'); else setQueue(audio); }   // all dropped songs form the queue
-  let visualUsed = false, jsonUsed = false, refused = '';
+  let visualUsed = false, jsonUsed = false;
   for (const f of files) {
     if (isAudioFile(f)) continue;
     let kind = null;
     if (/\.json$/i.test(f.name)) { if (!jsonUsed) kind = 'importJsonFile'; }
     else if (f.type.startsWith('image/') || isVideoFile(f)) {
       if (visualUsed) continue;   // first file of each kind wins
-      if (zone === 'background') kind = 'backgroundImage';
-      else if (zone === 'cover' && !isVideoFile(f)) kind = 'cover';
-      else { refused = isVideoFile(f) ? 'Videos can only be the background: drop them on the Background panel.' : 'Drop an image on the cover, or on the Background panel.'; continue; }
+      // on the cover spot or the Cover panel an image is the cover; anywhere else it is the background (videos always are)
+      kind = zone === 'cover' && !isVideoFile(f) ? 'cover' : 'backgroundImage';
     }
     if (!kind) continue;
     if (kind === 'importJsonFile') jsonUsed = true; else visualUsed = true;
     const dt = new DataTransfer(); dt.items.add(f); $(kind).files = dt.files; $(kind).dispatchEvent(new Event('change'));
   }
-  if (!audio.length && !visualUsed && !jsonUsed) notify(refused || 'Drop audio files, a cover or background image or video, or a project .json file.', true);
+  if (!audio.length && !visualUsed && !jsonUsed) notify('Drop audio files, an image or video, or a project .json file.', true);
 });
 
 // --- Keyboard Shortcuts & Fullscreen ---

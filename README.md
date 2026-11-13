@@ -111,8 +111,8 @@ The picture is always rendered at 1920 × 1080 and scaled to the chosen size. Re
 Drop targets:
 
 - **Audio** becomes the song, or joins the playlist when dropped on the Playlist panel.
-- **Image** on the cover spot or the Cover panel sets the cover. A dashed outline shows where it will land.
-- **Image, GIF or video** on the Background panel sets the background. Videos can only be backgrounds.
+- **Image** dropped on the cover spot or the Cover panel sets the cover. A dashed outline shows the cover spot while you drag.
+- **Image, GIF or video** dropped anywhere else sets the background. Videos are always backgrounds.
 - **`.json`** imports a project.
 
 ## Architecture
@@ -156,10 +156,11 @@ Tested in headless Chromium. Firefox and Safari are not yet verified.
 | `queue.js` | Playlist order logic: next, previous, insert, remove, move |
 | `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art) |
 | `demo.js` | Synthesizer for the built-in demo track |
-| `tests/` | Node tests for the ID3 reader, demo synthesizer, playlist logic and font tool |
+| `gif.js` | Animated GIF decoder (frames, disposal, transparency, interlacing) |
+| `tests/` | Node tests for the ID3 reader, the GIF decoder, the demo synthesizer, the playlist logic and the font tool |
 | `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` |
 
-Run the tests with `npm test` (Node 20 or later; nothing to install).
+Run the tests with `npm test` (Node 20 or later; nothing to install). The GIF tests use small hand-built fixtures that exercise each frame rule, and the ID3 tests cover unsynchronised, compressed and extended-header tags.
 
 **Design notes.** The parsing and playlist logic live in plain scripts with no dependencies, so they can be tested in Node. They are not ES modules, because modules cannot load from `file://`, and opening `index.html` locally is supported. The rendering, settings and history code depends on the browser's audio and canvas APIs, so it is kept together in `script.js` for now.
 
