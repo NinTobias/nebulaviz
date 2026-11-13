@@ -1741,7 +1741,9 @@ function applyPreset(key) {
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
   commitHistory();
-  notify(isBuiltIn(key) ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.');
+  // shown only in the popup: the status line keeps describing the song
+  const msg = isBuiltIn(key) ? `${PRESET_INFO[key][0]}: ${PRESET_INFO[key][1]}` : 'Preset applied.';
+  const st = $('status').textContent; notify(msg); $('status').textContent = st;
 }
 $('presetSelect').onchange = e => applyPreset(e.target.value);
 
