@@ -43,6 +43,8 @@ Audio, images and video never leave your browser. The only external request is f
 
 Bar shapes are rectangle, rounded, capsule and beveled. Corner size applies to rounded and beveled bars.
 
+The **Position** offsets (Visualizer panel) move the whole visualizer in any mode, in pixels of the 1920 × 1080 frame. Y runs from −200 (up) to +545 (down). The range is not symmetric: the visualizer sits above the bottom edge, and +545 is enough for every mode to reach it. The vertical range is wide enough for every mode to reach the bottom edge. The cover and text stay where they are, and presets keep your offset.
+
 ## Frequency analysis
 
 The **Frequency range** panel sets which part of the spectrum the bars show. A graph on a logarithmic axis (20 Hz to 20 kHz) displays the band positions and lights them with the music. Drag its two handles, or use the sliders, to set the lowest and highest frequency. The defaults are 20.9 Hz to 13.7 kHz.
@@ -61,7 +63,7 @@ The bass pulse follows the lowest bars up to about 98 Hz, so it keeps working wh
 - **Text.** Ten fonts, four weights, alignment, letter spacing, a shadow and an optional glow. Three lines are supported: artist, title and extra information.
 - **Glow.** One blur radius with separate strengths for bars, cover and text. The glow follows the main color or the rainbow hue.
 - **Stars and particles.** Density, speed, bass boost and color for the star field; beat sensitivity, amount and size for the bursts. One dial sets the direction of both.
-- **Contrast protection.** If your colors are too close to the background, an outline in the opposite tone is added. Your chosen colors are never changed.
+- **Contrast protection.** If your colors are too close to the background, an outline in the opposite tone is added. Your chosen colors are never changed. Each part has its own **Contrast outline** checkbox: the visualizer (Visualizer panel), the placeholder cover (Cover panel) and the text (Text panel). Turning one off keeps your colors and skips only that outline.
 
 ## Playback and playlists
 
