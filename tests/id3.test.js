@@ -53,3 +53,67 @@ test('garbage, truncated and empty input never throw', () => {
   assert.deepEqual(readID3(Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x10TIT2')), {});
   assert.deepEqual(readID3(new ArrayBuffer(0)), {});
 });
+
+// --- real-world edge cases ---
+const u16be = s => Buffer.concat([Buffer.from([1, 0xFE, 0xFF]), Buffer.from(s, 'utf16le').swap16(), Buffer.from([0, 0])]);
+// a v2.4 frame whose flags say "unsynchronised": every 0xFF in the data is followed by a 0x00 on disk
+function frame24Flags(id, data, flags2) {
+  return Buffer.concat([enc(id), ss(data.length), Buffer.from([0, flags2]), data]);
+}
+
+test('ID3v2.4: UTF-16 big-endian with a byte-order mark', () => {
+  const r = readID3(tag(4, [frame(4, 'TIT2', u16be('Großer Titel')), frame(4, 'TPE1', u16be('Künstler'))]));
+  assert.equal(r.title, 'Großer Titel'); assert.equal(r.artist, 'Künstler');
+});
+
+test('ID3v2.4: an unsynchronised frame is decoded back to its real bytes', () => {
+  // real text: "A", 0xFF, "B"  (encoded as Latin-1, so 0xFF is a sync-like byte that gets a 0x00 inserted on disk)
+  const onDisk = Buffer.from([0x00, 0x41, 0xFF, 0x00, 0x42]);
+  const r = readID3(tag(4, [frame24Flags('TIT2', onDisk, 0x02)]));
+  assert.equal(r.title, 'A\u00FFB');
+});
+
+test('ID3v2.4: compressed and encrypted frames are skipped, the rest still reads', () => {
+  const compressed = frame24Flags('TPE1', Buffer.from([0x00, 0x58, 0x58]), 0x08);
+  const encrypted = frame24Flags('TALB', Buffer.from([0x00, 0x58]), 0x04);
+  const r = readID3(tag(4, [compressed, encrypted, frame(4, 'TIT2', l1('Still here'))]));
+  assert.deepEqual(r, { title: 'Still here' });
+});
+
+test('genre: numeric codes are dropped, "(17)Rock" becomes "Rock", several values are joined', () => {
+  assert.equal(readID3(tag(3, [frame(3, 'TCON', l1('(17)Rock'))])).genre, 'Rock');
+  assert.equal(readID3(tag(3, [frame(3, 'TCON', l1('(17)'))])).genre, undefined);
+  assert.equal(readID3(tag(4, [frame(4, 'TCON', u8('Rock\0Pop'))])).genre, 'Rock, Pop');
+});
+
+test('several artists separated by a null byte are joined with ", "', () => {
+  assert.equal(readID3(tag(4, [frame(4, 'TPE1', u8('Alpha\0Beta'))])).artist, 'Alpha, Beta');
+});
+
+test('ID3v2.3 extended header is skipped before the frames', () => {
+  const ext = Buffer.from([0, 0, 0, 6, 0, 0, 0, 0, 0, 0]);   // size (6), flags, padding
+  const body = Buffer.concat([ext, frame(3, 'TIT2', l1('After ext'))]);
+  const t = Buffer.concat([enc('ID3'), Buffer.from([3, 0, 0x40]), ss(body.length), body]);
+  assert.equal(readID3(t).title, 'After ext');
+});
+
+test('ID3v2.4 extended header (synchsafe size) is skipped before the frames', () => {
+  const ext = Buffer.from([0, 0, 0, 6, 1, 0]);               // synchsafe size 6 (includes itself), one flag byte
+  const body = Buffer.concat([ext, frame(4, 'TIT2', l1('After ext 4'))]);
+  const t = Buffer.concat([enc('ID3'), Buffer.from([4, 0, 0x40]), ss(body.length), body]);
+  assert.equal(readID3(t).title, 'After ext 4');
+});
+
+test('a tag that claims more bytes than the file holds still returns what is there', () => {
+  const t = tag(4, [frame(4, 'TIT2', l1('Short'))]);
+  t.writeUInt8(0x7F, 9);   // claim a much larger tag size
+  assert.equal(readID3(t).title, 'Short');
+});
+
+test('ID3v2.3 tag-level unsynchronisation (header flag) is undone before the frames are read', () => {
+  // decoded text is "A", 0xFF, "B"; on disk a 0x00 follows every 0xFF in the tag body, which splits the text if it is not undone
+  const decoded = frame(3, 'TIT2', l1('A\xFFB'));
+  const onDisk = []; for (const b of decoded) { onDisk.push(b); if (b === 0xFF) onDisk.push(0); }
+  const t = Buffer.concat([enc('ID3'), Buffer.from([3, 0, 0x80]), ss(onDisk.length), Buffer.from(onDisk)]);
+  assert.equal(readID3(t).title, 'A\u00FFB');
+});
