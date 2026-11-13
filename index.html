@@ -137,6 +137,11 @@
 				<summary>Visualizer</summary>
 				<div class="group-body">
 					<div class="settings-row">
+						<label class="toggle"
+							title="Shows or hides the visualizer. The cover and text stay as they are."><input
+								type="checkbox" id="vizOn" checked> Show visualizer</label>
+					</div>
+					<div class="settings-row">
 						<label class="toggle">Mode
 							<select id="vizMode" class="btn">
 								<option value="bars">63-Bar Spectrum</option>
@@ -211,6 +216,8 @@
 								value="0"></label>
 						<label class="sens">Offset Y<input type="range" id="vizY" min="-200" max="545" step="5"
 								value="0"></label>
+						<label class="sens">Stretch<input type="range" id="vizW" min="0.5" max="1.25" step="0.01"
+								value="1"></label>
 					</div>
 					<div class="settings-row">
 						<label class="toggle"
@@ -468,9 +475,9 @@
 					<div class="slider-col">
 						<label class="sens">Size<input type="range" id="coverSize" min="50" max="150" step="5"
 								value="100"></label>
-						<label class="sens">Offset X<input type="range" id="coverX" min="-400" max="400" step="5"
+						<label class="sens">Offset X<input type="range" id="coverX" min="-940" max="1650" step="5"
 								value="0"></label>
-						<label class="sens">Offset Y<input type="range" id="coverY" min="-300" max="300" step="5"
+						<label class="sens">Offset Y<input type="range" id="coverY" min="-650" max="630" step="5"
 								value="0"></label>
 						<label class="sens">Corner radius<input type="range" id="coverRadius" min="0" max="50" step="1"
 								value="15" disabled></label>
@@ -526,6 +533,11 @@
 				<div class="group-body">
 					<div class="settings-row">
 						<label class="toggle"
+							title="Shows or hides the artist, title and extra info. The cover stays as it is."><input
+								type="checkbox" id="textOn" checked> Show text</label>
+					</div>
+					<div class="settings-row">
+						<label class="toggle"
 							title="Typeface for artist, title and extra info. Montserrat is the original look; Oswald, Bebas Neue, Playfair Display, Orbitron and Pacifico are loaded from Google Fonts when you pick them; the others are system fonts.">Font
 							<select id="textFont" class="btn">
 								<option value="montserrat">Montserrat</option>
@@ -564,9 +576,9 @@
 								value="100"></label>
 						<label class="sens">Letter space<input type="range" id="textSpace" min="-3" max="15" step="0.5"
 								value="0"></label>
-						<label class="sens">Offset X<input type="range" id="textX" min="-400" max="400" step="5"
+						<label class="sens">Offset X<input type="range" id="textX" min="-1750" max="1750" step="5"
 								value="0"></label>
-						<label class="sens">Offset Y<input type="range" id="textY" min="-300" max="300" step="5"
+						<label class="sens">Offset Y<input type="range" id="textY" min="-900" max="360" step="5"
 								value="0"></label>
 					</div>
 					<div class="settings-row">

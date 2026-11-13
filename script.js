@@ -29,7 +29,7 @@ let vizMode = 'bars', circRadius = 200, circCount = 90, circWidth = 5, circLengt
 let waveWidth = 6, waveFill = 0.3, waveGlow = 1, waveDetail = 126, ridgeRows = 14, ridgeStep = 20, ridgeAmp = 175, ridgeLine = 1;   // Smooth Wave / Ridgeline options
 let barShape = 'rect', barRound = 4, barGap = 7, glowBlur = 24, glowBars = 0, glowCover = 0, glowText = 0;
 const MODES = ['bars', 'circular', 'mirrored', 'wave', 'wavemir', 'dots', 'ridge'];
-const textCfg = { font: 'montserrat', weight: 'default', size: 100, space: 0, align: 'auto', x: 0, y: 0, color: '#ffffff', match: false, shOp: 0, shBlur: 8, shX: 3, shY: 3, shColor: '#000000' };
+const textCfg = { on: true, font: 'montserrat', weight: 'default', size: 100, space: 0, align: 'auto', x: 0, y: 0, color: '#ffffff', match: false, shOp: 0, shBlur: 8, shX: 3, shY: 3, shColor: '#000000' };
 const coverCfg = { on: true, shape: 'square', fit: 'crop', size: 100, x: 0, y: 0, radius: 15, opacity: 1, attach: true, bw: 0, bcolor: '#ffffff', bmatch: false, shOp: 0, shBlur: 12, shX: 0, shY: 6, shColor: '#000000', note: true, noteColor: '#ffffff' };
 const coverBuf = document.createElement('canvas'), bx = coverBuf.getContext('2d');   // the cover is drawn here first (clipped to its shape), then composited with opacity / shadow / glow
 function coverShapePath(x, y, s) {   // outline of the cover in its current shape, at (x, y) with side s
@@ -56,7 +56,7 @@ let volume = 1, muted = false, outGain = null;
 let mediaRecorder = null, recDest = null, recChunks = [], recNote = '', expCanvas = null, expCtx = null;
 let autoColorCycle = false, colorCycleHue = 52;
 let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, bgPulseAmt = 0.15, beatNow = false;
-const vizCfg = { x: 0, y: 0 };   // position of the whole visualizer, in pixels of the 1920x1080 frame
+const vizCfg = { on: true, x: 0, y: 0, w: 1 };   // position (pixels of the 1920x1080 frame) and horizontal stretch (1 = normal width) of the whole visualizer
 let outlineViz = true, outlineCover = true, outlineText = true;   // contrast outlines (see the contrast safety code in the renderer); on by default
 
 // Lock overlay color: uiMain/uiEnd hold the colors the user last SET (picker, hex, preset). Auto color cycling doesn't touch them.
@@ -209,12 +209,13 @@ const audioMemoryLimit = () => Math.max(0.4, Math.min(2, (navigator.deviceMemory
 const fmtMB = b => Math.round(b / 1048576).toLocaleString('en') + ' MB';
 
 // Make a decoded buffer the current song (shared by file loading and the built-in demo)
-function installSong(decoded, { gen, title, label, size, tags = {} }) {
+function installSong(decoded, { gen, title, label, size, tags = {}, edit = {} }) {   // edit = what the user typed for this track (kept on repeat or when coming back to it)
   stopRecording();   // only once the new song is really replacing the old one
   buf = decoded;
   $('demoBtn').hidden = true;   // the demo link is only an empty-state hint
-  $('title').value = tags.title || title;
-  if (tags.artist) { $('artist').value = tags.artist; autoArtist = tags.artist; }
+  $('title').value = 'title' in edit ? edit.title : (tags.title || title);
+  if ('artist' in edit) { $('artist').value = edit.artist; autoArtist = null; }
+  else if (tags.artist) { $('artist').value = tags.artist; autoArtist = tags.artist; }
   else if (autoArtist !== null) { if ($('artist').value === autoArtist) $('artist').value = DEFAULTS.artist; autoArtist = null; }   // drop the previous song's artist, unless the user edited it
   if (tags.cover) {
     if (!coverImg || coverFromTag) loadImage(new File([tags.cover.data], 'cover', { type: tags.cover.mime }), 'cover', im => {
@@ -260,7 +261,7 @@ async function loadTrack(i, autoplay) {
     const tags = readID3(ab);   // read before decoding: decodeAudioData may detach the buffer
     const decoded = await ctx.decodeAudioData(ab);
     if (gen !== loadGen) return false;   // a newer selection started: drop this stale result
-    installSong(decoded, { gen, title: titleFromName(f.name), label: f.name, size: f.size, tags });
+    installSong(decoded, { gen, title: titleFromName(f.name), label: f.name, size: f.size, tags, edit: entry.edit || {} });
     queueIdx = queue.indexOf(entry);
     renderQueue();
     if (autoplay) {
@@ -407,6 +408,9 @@ function renderQueue() {
   syncQueueUI();
 }
 renderQueue();
+
+// typing a title or artist is remembered for that track, so repeating it or coming back to it keeps the typed text
+for (const id of ['title', 'artist']) $(id).addEventListener('input', () => { const t = queue[queueIdx]; if (t) (t.edit ||= {})[id] = $(id).value; });
 
 $('song').onchange = e => { const files = Array.from(e.target.files); e.target.value = ''; if (files.length) setQueue(files); };
 $('queueAdd').onchange = e => { const files = Array.from(e.target.files); e.target.value = ''; if (files.length) addToQueue(files, 'end'); };
@@ -765,7 +769,7 @@ $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
 $('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
 $('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
-Object.entries({ vizX: 'x', vizY: 'y' }).forEach(([id, k]) => { $(id).oninput = e => { vizCfg[k] = +e.target.value; }; });
+Object.entries({ vizX: 'x', vizY: 'y', vizW: 'w' }).forEach(([id, k]) => { $(id).oninput = e => { vizCfg[k] = +e.target.value; }; });
 $('outlineViz').onchange = e => { outlineViz = e.target.checked; };
 $('outlineCover').onchange = e => { outlineCover = e.target.checked; };
 $('outlineText').onchange = e => { outlineText = e.target.checked; };
@@ -814,6 +818,8 @@ function syncCoverUI() {
   updateSliders();
 }
 $('coverOn').onchange = e => { coverCfg.on = e.target.checked; syncCoverUI(); };
+$('textOn').onchange = e => { textCfg.on = e.target.checked; };
+$('vizOn').onchange = e => { vizCfg.on = e.target.checked; };
 $('coverShape').onchange = e => { coverCfg.shape = e.target.value; syncCoverUI(); };
 $('coverFit').onchange = e => { coverCfg.fit = e.target.value; };
 $('coverAttach').onchange = e => { coverCfg.attach = e.target.checked; };
@@ -922,6 +928,7 @@ const SLIDER_INFO = {
   bandFloor:   { scale: 100, unit: '%', tip: 'Noise floor: levels below this are cut to zero, so quiet background noise does not show.' },
   bandGamma:   { unit: '×',      tip: 'Contrast. Above 1 makes quiet bars smaller and loud ones stand out; below 1 lifts the quiet parts.' },
   coverSize:   { unit: '%',      tip: 'Size of the cover. 100% is the original (192 px, or a bit under the ring radius in circular mode).' },
+  vizW:        { scale: 100, unit: '%', tip: 'Stretches the whole visualizer sideways around the centre. 100% = normal width. About 122% reaches the left and right edges; the cover and text stay where they are.' },
   vizX:        { unit: 'px',     tip: 'Moves the whole visualizer left (negative) or right (positive), in pixels of the 1920x1080 frame. The cover and text stay where they are.' },
   vizY:        { unit: 'px',     tip: 'Moves the whole visualizer up (negative) or down (positive), in pixels of the 1920x1080 frame. The range is not symmetric: at +545 every mode reaches the bottom edge, and at -200 the bars reach the top edge.' },
   coverX:      { unit: 'px',     tip: 'Moves the cover left (negative) or right (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
@@ -1012,6 +1019,8 @@ const CONTROL_TIPS = {
   outlineCover: 'Adds an edge to the placeholder when it would blend into the background. Has no effect once a cover image or a border is used.',
   outlineText: 'Adds an outline to the text when it would be hard to read on the background. Turn it off to keep plain text.',
   coverNote: 'Shows the music note on the placeholder that appears when no cover image is loaded.',
+  vizOn: 'Shows or hides the visualizer. The cover and text stay as they are.',
+  textOn: 'Shows or hides the artist, title and extra info. The cover stays as it is.',
   textFont: 'Typeface for artist, title and extra info. Fonts other than Montserrat and the system fonts are fetched from Google Fonts when first picked.',
   textWeight: 'Default = bold artist over a regular title (the original look). The other choices use one weight for every line. Some fonts only have one weight.',
   textAlign: 'Auto = left of the cover, or centered under the ring in circular mode.',
@@ -1341,7 +1350,10 @@ function frame() {
   }
 
   // --- RENDER VISUALIZER MODES --- (moved as one block by the Position offsets; gradients and glow move with it)
-  g.save(); g.translate(vizCfg.x, vizCfg.y);
+  if (vizCfg.on) {   // 'Show visualizer' off: the mode drawing is skipped, the cover and text stay
+  g.save(); const frameBase = g.getTransform();   // untransformed frame: used for the ridgeline backdrop
+  g.translate(vizCfg.x, vizCfg.y);
+  g.translate(960, 0); g.scale(vizCfg.w, 1); g.translate(-960, 0);   // stretch around the centre line (X0..X1 is centred on 960)
   if (vizMode === 'bars') {
     const gap = barGap, w = (X1 - X0 - gap * (N - 1)) / N, cap = barShape === 'capsule';
     const all = new Path2D(), outlined = [];
@@ -1470,7 +1482,7 @@ function frame() {
     const drawRow = (rp, by, fade, glow) => {   // glow = the front line only: a glow on every row would be far too heavy
       g.save(); g.translate(0, by);
       g.save(); g.clip(rp.area);   // body = an exact copy of the backdrop (colour, gradient, image, pulse): hides the rows behind, adds no colour of its own
-      g.globalAlpha = 1; g.drawImage(ridgeBG, 0, -by);
+      g.globalAlpha = 1; g.setTransform(frameBase); g.drawImage(ridgeBG, 0, 0);   // the backdrop copy stays put: no offset, no stretch
       g.restore();
       olStroke(rp.curve, (3 + 1.5 * fade) * ridgeLine, fade);
       if (glow && glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
@@ -1488,6 +1500,7 @@ function frame() {
   drawParticles(mdt);
 
   g.restore();
+  }
 
   // Cover artwork: bottom-left normally, centred inside the ring in circular mode (styled in the Cover group)
   const circ = vizMode === 'circular', C = coverCfg;
@@ -1572,9 +1585,11 @@ function frame() {
       g.fillText(txt, ax, y); g.restore();
     }
   };
-  fitText(artist, wt[0], (three ? 70 : 82) * ts, maxW, (three ? 0 : -0.01) + sp); drawLine(artist, lineY(0));
-  fitText(title, wt[1], (three ? 48 : 51) * ts, maxW, (three ? 0.015 : 0) + sp); drawLine(title, lineY(1));
-  if (extra) { fitText(extra, wt[1], 48 * ts, maxW, 0.015 + sp); drawLine(extra, lineY(2)); }
+  if (T.on) {   // 'Show text' off: the lines are laid out above but nothing is drawn
+    fitText(artist, wt[0], (three ? 70 : 82) * ts, maxW, (three ? 0 : -0.01) + sp); drawLine(artist, lineY(0));
+    fitText(title, wt[1], (three ? 48 : 51) * ts, maxW, (three ? 0.015 : 0) + sp); drawLine(title, lineY(1));
+    if (extra) { fitText(extra, wt[1], 48 * ts, maxW, 0.015 + sp); drawLine(extra, lineY(2)); }
+  }
   g.textAlign = 'left';
   if ('letterSpacing' in g) g.letterSpacing = '0px';
   if (expCanvas && recActive()) { expCtx.imageSmoothingQuality = 'high'; expCtx.drawImage(cv, 0, 0, expCanvas.width, expCanvas.height); }   // scaled copy for the chosen export resolution
@@ -1715,7 +1730,7 @@ function applySettings(p) {
   setCtl('waveWidth', wv.width); setCtl('waveFill', wv.fill); setCtl('waveGlow', wv.glow); setCtl('waveDetail', wv.detail);
   setCtl('ridgeRows', rd.rows); setCtl('ridgeStep', rd.step); setCtl('ridgeAmp', rd.amp); setCtl('ridgeLine', rd.line);
   const vz = p.viz || {};
-  setCtl('vizX', vz.x); setCtl('vizY', vz.y);
+  setCtl('vizOn', vz.on); setCtl('vizX', vz.x); setCtl('vizY', vz.y); setCtl('vizW', vz.w);
   const ou = p.outlines || {};
   setCtl('outlineViz', ou.viz); setCtl('outlineCover', ou.cover); setCtl('outlineText', ou.text);
   const bs = p.bars || {}, gl = p.glow || {};
@@ -1732,7 +1747,7 @@ function applySettings(p) {
   if (q) { setCtl('partOn', q.on); setCtl('partCount', q.count); setCtl('partSize', q.size); setCtl('partSpeed', q.speed); setCtl('partSens', q.sens); }
   const tx = p.text;
   if (tx) {
-    setCtl('textFont', tx.font); setCtl('textWeight', tx.weight); setCtl('textAlign', tx.align);
+    setCtl('textOn', tx.on); setCtl('textFont', tx.font); setCtl('textWeight', tx.weight); setCtl('textAlign', tx.align);
     setCtl('textSize', tx.size); setCtl('textSpace', tx.space); setCtl('textX', tx.x); setCtl('textY', tx.y);
     setCtl('textColor', tx.color); setCtl('textMatch', tx.match);
     setCtl('textShOp', tx.shOp); setCtl('textShBlur', tx.shBlur); setCtl('textShX', tx.shX); setCtl('textShY', tx.shY); setCtl('textShColor', tx.shColor);
@@ -1977,14 +1992,14 @@ const projectSchema = () => ({
   wave: { width: rg('waveWidth'), fill: rg('waveFill'), glow: rg('waveGlow'), detail: rg('waveDetail') }, ridge: { rows: rg('ridgeRows'), step: rg('ridgeStep'), amp: rg('ridgeAmp'), line: rg('ridgeLine') },
   bars: { shape: sel('barShape'), round: rg('barRound'), gap: rg('barGap') }, glow: { blur: rg('glowBlur'), bars: rg('glowBars'), cover: rg('glowCover'), text: rg('glowText') },
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
-  outlines: { viz: bool, cover: bool, text: bool }, viz: { x: rg('vizX'), y: rg('vizY') },
+  outlines: { viz: bool, cover: bool, text: bool }, viz: { on: bool, x: rg('vizX'), y: rg('vizY'), w: rg('vizW') },
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
   particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
   bands: { lo: rg('bandLo'), hi: rg('bandHi'), spacing: rg('bandSpacing'), tilt: rg('bandTilt'), pivot: rg('bandPivot'), cap: rg('bandCap'), lowCut: rg('bandLowCut'),
     smooth: rg('bandSmooth'), attack: rg('bandAttack'), decay: rg('bandDecay'), floor: rg('bandFloor'), gamma: rg('bandGamma') },
   cover: { on: bool, shape: sel('coverShape'), fit: sel('coverFit'), attach: bool, size: rg('coverSize'), x: rg('coverX'), y: rg('coverY'), radius: rg('coverRadius'), opacity: rg('coverOpacity'),
     bw: rg('coverBw'), bcolor: hex, bmatch: bool, shOp: rg('coverShOp'), shBlur: rg('coverShBlur'), shX: rg('coverShX'), shY: rg('coverShY'), shColor: hex, note: bool, noteColor: hex },
-  text: { font: sel('textFont'), weight: sel('textWeight'), align: sel('textAlign'), size: rg('textSize'), space: rg('textSpace'), x: rg('textX'), y: rg('textY'), color: hex, match: bool, shOp: rg('textShOp'), shBlur: rg('textShBlur'), shX: rg('textShX'), shY: rg('textShY'), shColor: hex }
+  text: { on: bool, font: sel('textFont'), weight: sel('textWeight'), align: sel('textAlign'), size: rg('textSize'), space: rg('textSpace'), x: rg('textX'), y: rg('textY'), color: hex, match: bool, shOp: rg('textShOp'), shBlur: rg('textShBlur'), shX: rg('textShX'), shY: rg('textShY'), shColor: hex }
 });
 function cleanProject(schema, obj, path, bad) {   // keeps only valid fields (numbers clamped to the real control ranges); lists the rest in bad
   const out = {};
