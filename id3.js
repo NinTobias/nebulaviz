@@ -99,4 +99,66 @@ function readID3(ab) {   // never throws: a damaged tag just means no metadata
   return out;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { readID3 };   // lets the Node tests load this file; in the browser it is a plain script
+// --- FLAC tags: Vorbis comments (title, artist, album, date, track, genre) and the PICTURE block (cover art). Same result shape as readID3. ---
+const FLAC_KEYS = { TITLE: 'title', ARTIST: 'artist', ALBUM: 'album', DATE: 'year', YEAR: 'year', TRACKNUMBER: 'track', TRACK: 'track', GENRE: 'genre' };
+function flacComments(b, out) {   // one VORBIS_COMMENT block (little-endian lengths); the first value of each field wins
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let p = 4 + dv.getUint32(0, true);   // skip the vendor string
+  const n = dv.getUint32(p, true); p += 4;
+  for (let i = 0; i < n && p + 4 <= b.length; i++) {
+    const len = dv.getUint32(p, true); p += 4;
+    if (p + len > b.length) break;
+    const s = new TextDecoder('utf-8').decode(b.subarray(p, p + len)); p += len;
+    const eq = s.indexOf('='); if (eq < 0) continue;
+    const key = FLAC_KEYS[s.slice(0, eq).trim().toUpperCase()]; if (!key || out[key]) continue;
+    let val = s.slice(eq + 1).trim();
+    if (key === 'year') { if (!/^\d{4}/.test(val)) continue; val = val.slice(0, 4); }
+    else if (key === 'track') val = val.split('/')[0].trim();
+    else if (key === 'genre' && /^\d+$/.test(val)) continue;   // bare numeric genre codes aren't meaningful
+    if (val) out[key] = val;
+  }
+}
+function flacPicture(b) {   // one PICTURE block (big-endian): { data, mime, type }, or null when the image is not PNG / JPEG / GIF / WebP
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const type = dv.getUint32(0);
+  let p = 8 + dv.getUint32(4);                  // MIME type
+  p += 4 + dv.getUint32(p);                     // description
+  p += 16;                                      // width, height, colour depth, colour count
+  const n = dv.getUint32(p); p += 4;
+  if (p + n > b.length) return null;
+  const data = b.slice(p, p + n), mime = id3Image(data);
+  return mime && data.length > 32 ? { data, mime, type } : null;
+}
+function readFlacTags(ab) {   // never throws: a damaged block just means no metadata from it
+  const out = {};
+  try {
+    const u = new Uint8Array(ab);
+    if (u.length < 8 || u[0] !== 0x66 || u[1] !== 0x4C || u[2] !== 0x61 || u[3] !== 0x43) return out;   // "fLaC"
+    let p = 4;
+    while (p + 4 <= u.length) {
+      const type = u[p] & 127, last = u[p] & 128, len = u[p + 1] << 16 | u[p + 2] << 8 | u[p + 3];
+      p += 4;
+      if (p + len > u.length) break;            // truncated block
+      const b = u.subarray(p, p + len);
+      try {
+        if (type === 4) flacComments(b, out);
+        else if (type === 6) { const pic = flacPicture(b); if (pic && (!out.cover || (pic.type === 3 && out.cover.type !== 3))) out.cover = pic; }   // prefer the front cover
+      } catch (e) { console.warn('FLAC block could not be read', e); }
+      p += len;
+      if (last) break;
+    }
+  } catch (e) { console.warn('FLAC tags could not be read', e); }
+  return out;
+}
+function readTags(ab) {   // any supported file: FLAC (also when an ID3 header sits in front of it), otherwise ID3
+  const u = new Uint8Array(ab);
+  if (u.length >= 14 && u[0] === 0x49 && u[1] === 0x44 && u[2] === 0x33) {   // "ID3" header first
+    const at = 10 + id3Sync(u, 6);
+    if (at + 4 <= u.length && u[at] === 0x66 && u[at + 1] === 0x4C && u[at + 2] === 0x61 && u[at + 3] === 0x43)
+      return Object.assign(readID3(ab), readFlacTags(ab.slice(at)));
+  }
+  if (u.length >= 4 && u[0] === 0x66 && u[1] === 0x4C && u[2] === 0x61 && u[3] === 0x43) return readFlacTags(ab);
+  return readID3(ab);
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { readID3, readFlacTags, readTags };   // lets the Node tests load this file; in the browser it is a plain script

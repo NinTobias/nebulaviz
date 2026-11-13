@@ -1140,7 +1140,7 @@ input[type=color]:disabled {
   /* the sticky bar spans the full width with a solid background (settings never show through at the sides);
      the canvas and play bar are centred inside it and capped so the pinned player stays at roughly 40% of the window height or less */
   .stage:not(.fs) {
-    --pw: min(100%, calc(36dvh * 16 / 9));
+    --pw: min(100%, max(430px, calc(36dvh * 16 / 9)));   /* at least 430 px wide, so all the play-bar buttons and the time fit */
     position: sticky;
     top: 0;
     z-index: 20;
@@ -1163,7 +1163,13 @@ input[type=color]:disabled {
     width: var(--pw);
     margin: 8px auto 0;
     flex-wrap: nowrap;
-    gap: 8px
+    gap: 4px
+  }
+
+  /* the buttons on the pinned bar are a little smaller, so the time readout is never cut off */
+  .stage:not(.fs) .vbtn {
+    width: 32px;
+    height: 32px
   }
 
   .stage:not(.fs) .round {
@@ -1173,6 +1179,7 @@ input[type=color]:disabled {
 
   .stage:not(.fs) #time {
     min-width: 0;
+    flex: none;
     font-size: 12px;
     white-space: nowrap
   }

@@ -258,7 +258,7 @@ async function loadTrack(i, autoplay) {
     : est > limit * 0.4 ? 'Decoding a large audio file, this can take a moment…' : 'Decoding audio…';
   try {
     const ab = await f.arrayBuffer();
-    const tags = readID3(ab);   // read before decoding: decodeAudioData may detach the buffer
+    const tags = readTags(ab);   // read before decoding: decodeAudioData may detach the buffer (MP3 / ID3 and FLAC tags)
     const decoded = await ctx.decodeAudioData(ab);
     if (gen !== loadGen) return false;   // a newer selection started: drop this stale result
     installSong(decoded, { gen, title: titleFromName(f.name), label: f.name, size: f.size, tags, edit: entry.edit || {} });

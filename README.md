@@ -25,7 +25,7 @@ Audio, images and video never leave your browser. The only external request is f
 ## Getting started
 
 1. Open the [live demo](https://nintobias.github.io/nebulaviz/), or open `index.html` in a modern browser. No build step or server is required.
-2. Choose one or more songs, or drop them on the page. Title, artist, album, year, track, genre and embedded cover art are read from ID3 tags when present.
+2. Choose one or more songs, or drop them on the page. Title, artist, album, year, track, genre and embedded cover art are read from ID3 tags (MP3) or FLAC tags when present.
 3. Without a file, use **Play the built-in demo** under the player. The demo is synthesized in the browser.
 4. Pick a visualizer mode and a preset as a starting point, then adjust.
 
@@ -43,7 +43,7 @@ Audio, images and video never leave your browser. The only external request is f
 
 Bar shapes are rectangle, rounded, capsule and beveled. Corner size applies to rounded and beveled bars.
 
-The **Position** offsets (Visualizer panel) move the whole visualizer in any mode, in pixels of the 1920 × 1080 frame. Y runs from −200 (up) to +545 (down). The range is not symmetric: the visualizer sits above the bottom edge, and +545 is enough for every mode to reach it. The vertical range is wide enough for every mode to reach the bottom edge. The cover and text stay where they are, and presets keep your offset.
+**Show visualizer** (top of the Visualizer panel) hides the visualizer without touching the cover or text. The **Position** controls (Visualizer panel) move and resize the whole visualizer in any mode. **Offset X/Y** move it in pixels of the 1920 × 1080 frame: X runs from −400 to 400; Y runs from −200 (up) to +545 (down), an asymmetric range chosen so that every mode can reach the bottom edge. **Stretch** widens or narrows it sideways around the centre, from 50% to 125%; about 122% reaches both edges. Circular mode becomes an ellipse when stretched. The cover and text stay where they are, and presets keep your position and stretch.
 
 ## Frequency analysis
 
@@ -59,8 +59,8 @@ The bass pulse follows the lowest bars up to about 98 Hz, so it keeps working wh
 
 - **Colors.** Main and gradient colors each have a hue wheel, a saturation and value square, and hex and RGB fields. Auto cycling rotates the hue. Rainbow spreads the spectrum across the bars or around the ring. **Lock overlay color** keeps the interface on the color you last chose while cycling.
 - **Background.** Solid, two-color gradient (with a draggable angle dial; hold <kbd>Shift</kbd> for 15° steps or <kbd>Alt</kbd> to disable snapping), or a still image, GIF or video. Videos play muted and loop, and they are included in exports.
-- **Cover.** Square, rounded, circle or squircle; crop or letterbox fit; size, offset and opacity; border; drop shadow. Text can follow the cover's position and size. In circular mode the cover sits inside the ring, and the text stays centered beneath it.
-- **Text.** Ten fonts, four weights, alignment, letter spacing, a shadow and an optional glow. Three lines are supported: artist, title and extra information.
+- **Cover.** Square, rounded, circle or squircle; crop or letterbox fit; size, offset and opacity; border; drop shadow. The offset ranges are wide enough to move the cover to every edge of the frame. Text can follow the cover's position and size. In circular mode the cover sits inside the ring, and the text stays centered beneath it.
+- **Text.** **Show text** (top of the Text panel) hides the artist, title and extra info without touching the cover. Offsets are wide enough to move the text to every edge of the frame. Ten fonts, four weights, alignment, letter spacing, a shadow and an optional glow. Three lines are supported: artist, title and extra information.
 - **Glow.** One blur radius with separate strengths for bars, cover and text. The glow follows the main color or the rainbow hue.
 - **Stars and particles.** Density, speed, bass boost and color for the star field; beat sensitivity, amount and size for the bursts. One dial sets the direction of both.
 - **Contrast protection.** If your colors are too close to the background, an outline in the opposite tone is added. Your chosen colors are never changed. Each part has its own **Contrast outline** checkbox: the visualizer (Visualizer panel), the placeholder cover (Cover panel) and the text (Text panel). Turning one off keeps your colors and skips only that outline.
@@ -71,6 +71,7 @@ The bass pulse follows the lowest bars up to about 98 Hz, so it keeps working wh
 - **Previous** restarts the song after three seconds, or goes back on the first track. The <kbd>P</kbd> and <kbd>N</kbd> keys do the same as the buttons.
 - **Play the next track automatically** and **Repeat the queue** are on the Playlist panel. Skipping while paused selects the track without starting it.
 - Drag a track by its ⋮⋮ handle to reorder the queue, or focus the handle and use the arrow keys.
+- The title and artist you type are kept for that track: repeating it or coming back to it keeps your text, while other tracks show their own tags.
 - Only the playing track is decoded and held in memory, so long playlists use no more memory than a single song.
 - Stars, particles, videos and GIFs stop while a loaded song is paused, so a recording resumes exactly where it stopped.
 - Click the time display to switch between elapsed and remaining time. The choice is remembered.
@@ -138,7 +139,7 @@ flowchart LR
 
 ## Browser support and limits
 
-- **Audio** is decoded by the browser. MP3, WAV, OGG, FLAC, M4A and AAC normally work. Tags are read from MP3 and from any file with ID3v1 or ID3v2 tags. FLAC, Ogg and M4A tags are not read yet.
+- **Audio** is decoded by the browser. MP3, WAV, OGG, FLAC, M4A and AAC normally work. Tags are read from MP3 and any file with ID3v1 or ID3v2 tags, and from FLAC (Vorbis comments and cover art). Ogg and M4A tags are not read yet.
 - **Length.** Decoded audio is held in memory at roughly 10–20 times the file's size. Tracks that would exceed the browser's memory allowance are refused with a message instead of crashing the tab. In practice that is roughly an hour of stereo audio.
 - **Images** are limited to 25 MB. Large images are downscaled to the size that can be drawn.
 - **Video backgrounds** are limited to 1 GB. Playback depends on the codecs your browser supports; MP4 (H.264) and WebM are the safest choices.
