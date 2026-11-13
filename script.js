@@ -56,6 +56,8 @@ let volume = 1, muted = false, outGain = null;
 let mediaRecorder = null, recDest = null, recChunks = [], recNote = '', expCanvas = null, expCtx = null;
 let autoColorCycle = false, colorCycleHue = 52;
 let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, bgPulseAmt = 0.15, beatNow = false;
+let outlineViz = true, outlineCover = true, outlineText = true;   // contrast outlines (see the contrast safety code in the renderer); on by default
+
 // Lock overlay color: uiMain/uiEnd hold the colors the user last SET (picker, hex, preset). Auto color cycling doesn't touch them.
 let lockOverlay = false, uiMain = '#f2d90a', uiEnd = '#ff6a00';
 
@@ -762,6 +764,9 @@ $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
 $('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
 $('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
+$('outlineViz').onchange = e => { outlineViz = e.target.checked; };
+$('outlineCover').onchange = e => { outlineCover = e.target.checked; };
+$('outlineText').onchange = e => { outlineText = e.target.checked; };
 $('waveWidth').oninput = e => { waveWidth = +e.target.value; updateSliders(); };
 $('waveFill').oninput = e => { waveFill = +e.target.value; updateSliders(); };
 $('waveGlow').oninput = e => { waveGlow = +e.target.value; updateSliders(); };
@@ -999,6 +1004,9 @@ const CONTROL_TIPS = {
   coverFit: 'Crop to fill cuts the image to fill the shape. Fit shows the whole image with black bars where it does not fill it.',
   coverAttach: 'On: moving or resizing the cover carries the text with it. Off: the text stays where it is.',
   coverBorderMatch: 'Paints the border with the same colors (gradient or rainbow) as the visualizer.',
+  outlineViz: 'Adds a dark or white edge to the bars, ring or wave when they would blend into the background. Turn it off to keep the plain colors.',
+  outlineCover: 'Adds an edge to the placeholder when it would blend into the background. Has no effect once a cover image or a border is used.',
+  outlineText: 'Adds an outline to the text when it would be hard to read on the background. Turn it off to keep plain text.',
   coverNote: 'Shows the music note on the placeholder that appears when no cover image is loaded.',
   textFont: 'Typeface for artist, title and extra info. Fonts other than Montserrat and the system fonts are fetched from Google Fonts when first picked.',
   textWeight: 'Default = bold artist over a regular title (the original look). The other choices use one weight for every line. Some fonts only have one weight.',
@@ -1311,8 +1319,8 @@ function frame() {
   const ol = needOL(Math.min(...fills.flatMap(a => bgRefs.map(b => crOf(a, b)))));
   const inks = new Set(bgRefs.map(inkFor)), twoTone = inks.size > 1, olCol = twoTone ? '#000' : inks.values().next().value;
   // stroke the given path (or the current path when none) as an outline; twoTone = light halo under a dark line
-  const olStroke = (path, lw, alpha = 1) => {
-    if (ol <= 0) return;
+  const olStroke = (path, lw, alpha = 1, on = outlineViz) => {
+    if (ol <= 0 || !on) return;
     g.save(); g.shadowBlur = 0; g.lineJoin = 'round';
     const run = () => path ? g.stroke(path) : g.stroke();
     g.globalAlpha = alpha * ol;
@@ -1340,7 +1348,7 @@ function frame() {
       const br = Math.max(r1 + (r2 - r1) * tx, g1 + (g2 - g1) * tx, b1 + (b2 - b1) * tx);
       let o = rainbow ? 0 : Math.min(1, Math.max(0, (FADE_FROM - br) / (FADE_FROM - FADE_TO)));
       o = o * o * (3 - 2 * o);
-      if (o > 0.01) outlined.push([x, y, w, h, o]);   // near-black bars get a white outline that fades in
+      if (o > 0.01 && outlineViz) outlined.push([x, y, w, h, o]);   // near-black bars get a white outline that fades in
     }
     g.save();
     if (glowBars > 0) { g.shadowColor = glowCol(Math.min(1, glowBars)); g.shadowBlur = glowBlur; }
@@ -1525,7 +1533,7 @@ function frame() {
       g.save(); g.globalAlpha = C.opacity; g.clip(full);
       g.strokeStyle = C.bmatch ? coverGrad(g, cx, cy, cs) : C.bcolor; g.lineWidth = C.bw * 2; g.lineJoin = 'round'; g.stroke(full);
       g.restore();
-    } else if (!coverImg) olStroke(full, 4, C.opacity);
+    } else if (!coverImg) olStroke(full, 4, C.opacity, outlineCover);
   }
 
   // text: styled in the Text group. Right of the cover normally, centred under the ring in circular mode
@@ -1544,7 +1552,7 @@ function frame() {
   const lineY = i => lineY0(i) + yShift + T.y + attachDy;
   const sp = T.space / 100, shRGB = rgbOf(T.shColor);
   g.fillStyle = T.match ? vizFill : T.color; g.textBaseline = 'alphabetic'; g.textAlign = algn;
-  const tol = T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read (rainbow text is judged via ol)
+  const tol = !outlineText ? 0 : T.match ? ol : needOL(Math.min(...bgRefs.map(b => crOf(T.color, b))));   // text outline only when the text would be hard to read (rainbow text is judged via ol)
   const drawLine = (txt, y) => {
     let drawn = false;
     if (tol > 0) { g.save(); g.globalAlpha = tol; g.lineJoin = 'round'; if (twoTone) { g.strokeStyle = '#fff'; g.lineWidth = 10; g.strokeText(txt, ax, y); } g.strokeStyle = olCol; g.lineWidth = 6; g.strokeText(txt, ax, y); g.restore(); }
@@ -1679,6 +1687,7 @@ function getSettings(withText) {
     wave: { width: waveWidth, fill: waveFill, glow: waveGlow, detail: waveDetail }, ridge: { rows: ridgeRows, step: ridgeStep, amp: ridgeAmp, line: ridgeLine },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
+    outlines: { viz: outlineViz, cover: outlineCover, text: outlineText },
     stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }, bands: { ...bandCfg }
   };
 }
@@ -1698,6 +1707,8 @@ function applySettings(p) {
   const wv = p.wave || {}, rd = p.ridge || {};
   setCtl('waveWidth', wv.width); setCtl('waveFill', wv.fill); setCtl('waveGlow', wv.glow); setCtl('waveDetail', wv.detail);
   setCtl('ridgeRows', rd.rows); setCtl('ridgeStep', rd.step); setCtl('ridgeAmp', rd.amp); setCtl('ridgeLine', rd.line);
+  const ou = p.outlines || {};
+  setCtl('outlineViz', ou.viz); setCtl('outlineCover', ou.cover); setCtl('outlineText', ou.text);
   const bs = p.bars || {}, gl = p.glow || {};
   setCtl('barShape', bs.shape); setCtl('barRound', bs.round); setCtl('barGap', bs.gap);
   setCtl('glowBlur', gl.blur); setCtl('glowBars', gl.bars); setCtl('glowCover', gl.cover); setCtl('glowText', gl.text);
@@ -1957,6 +1968,7 @@ const projectSchema = () => ({
   wave: { width: rg('waveWidth'), fill: rg('waveFill'), glow: rg('waveGlow'), detail: rg('waveDetail') }, ridge: { rows: rg('ridgeRows'), step: rg('ridgeStep'), amp: rg('ridgeAmp'), line: rg('ridgeLine') },
   bars: { shape: sel('barShape'), round: rg('barRound'), gap: rg('barGap') }, glow: { blur: rg('glowBlur'), bars: rg('glowBars'), cover: rg('glowCover'), text: rg('glowText') },
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
+  outlines: { viz: bool, cover: bool, text: bool },
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
   particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
   bands: { lo: rg('bandLo'), hi: rg('bandHi'), spacing: rg('bandSpacing'), tilt: rg('bandTilt'), pivot: rg('bandPivot'), cap: rg('bandCap'), lowCut: rg('bandLowCut'),

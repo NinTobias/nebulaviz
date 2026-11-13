@@ -205,6 +205,11 @@
 						<label class="sens">Bar count<input type="range" id="circCount" min="32" max="160" step="1"
 								value="90"></label>
 					</div>
+					<div class="settings-row">
+						<label class="toggle"
+							title="Adds a dark or white edge to the bars, ring or wave when they would blend into the background. Turn it off to keep the plain colors."><input
+								type="checkbox" id="outlineViz" checked> Contrast outline</label>
+					</div>
 				</div>
 			</details>
 			<details class="group" open>
@@ -501,6 +506,11 @@
 						<label class="toggle"><input type="color" id="coverNoteColor" value="#ffffff"> Note
 							color</label>
 					</div>
+					<div class="settings-row">
+						<label class="toggle"
+							title="Adds an edge to the placeholder when it would blend into the background. Has no effect once a cover image or a border is used."><input
+								type="checkbox" id="outlineCover" checked> Contrast outline on the placeholder</label>
+					</div>
 					<div class="hint">In circular mode, Size and Offset are relative to the spot inside the ring.</div>
 				</div>
 			</details>
@@ -571,6 +581,11 @@
 					</div>
 					<div class="settings-row">
 						<label class="toggle"><input type="color" id="textShColor" value="#000000"> Shadow color</label>
+					</div>
+					<div class="settings-row">
+						<label class="toggle"
+							title="Adds an outline to the text when it would be hard to read on the background. Turn it off to keep plain text."><input
+								type="checkbox" id="outlineText" checked> Contrast outline</label>
 					</div>
 
 				</div>
