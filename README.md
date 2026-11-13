@@ -1,324 +1,178 @@
 # Nebula Visualizer
 
-A real-time audio visualizer inspired by Monstercat's classic spectrum aesthetic. Load a song, add cover art and track details, and watch the visualizer react to the beat, bass and melody.
-
 [![Live demo](https://img.shields.io/badge/live%20demo-nintobias.github.io%2Fnebulaviz-f2d90a?style=flat-square)](https://nintobias.github.io/nebulaviz/)
-![Vanilla JS](https://img.shields.io/badge/vanilla-JavaScript-f7df1e?style=flat-square)
 ![No build step](https://img.shields.io/badge/build%20step-none-444?style=flat-square)
-![Privacy](https://img.shields.io/badge/uploads-none-2ea44f?style=flat-square)
+![No uploads](https://img.shields.io/badge/uploads-none-2ea44f?style=flat-square)
 
-![Nebula Visualizer screenshot](preview.png)
+![Nebula Visualizer](preview.png)
 
-> [!NOTE]
-> Your audio and images are processed entirely in your browser. Nothing is uploaded anywhere. Web fonts are the one outside request: run `npm run fonts` once to self-host them (see [Fonts](#fonts-and-privacy)).
+Nebula Visualizer is a real-time music visualizer for the browser. It renders a spectrum, waveform or LED display from any audio file, with control over color, cover art, typography, backgrounds and effects. Screenshots and video (up to 3840 × 2160) are captured directly in the page.
 
-## Contents
+Audio, images and video never leave your browser. The only external request is for web fonts, until they are self-hosted (see [Fonts](#fonts)).
 
-- [Nebula Visualizer](#nebula-visualizer)
-  - [Contents](#contents)
-  - [Overview](#overview)
-  - [Quick start](#quick-start)
-  - [Visualizer modes](#visualizer-modes)
-  - [Settings reference](#settings-reference)
-  - [Presets, projects and history](#presets-projects-and-history)
-    - [Song tags (ID3)](#song-tags-id3)
-  - [Playlists](#playlists)
-  - [Output: screenshots and video](#output-screenshots-and-video)
-  - [Shortcuts and drag \& drop](#shortcuts-and-drag--drop)
-  - [How it works](#how-it-works)
-  - [Browser support and limits](#browser-support-and-limits)
-  - [Project structure](#project-structure)
-    - [Fonts and privacy](#fonts-and-privacy)
-    - [Why `script.js` is still one file](#why-scriptjs-is-still-one-file)
-  - [Notes](#notes)
+## Features
 
-## Overview
+- **Seven visualizer modes**: 63-band spectrum, circular, mirrored, smooth wave, mirrored wave, LED matrix and ridgeline, each with its own settings.
+- **Configurable analysis**: 63 bands on a logarithmic or linear scale over an adjustable frequency range, with tone balance and response (smoothing, attack, decay, noise floor, contrast).
+- **Beat-reactive**: bass-driven pulses for the cover and background, and beat-triggered star flashes and particle bursts.
+- **Layered styling**: solid, gradient, rainbow and auto-cycling colors; a cover with shape, fit, border and shadow; text with font, weight, alignment, shadow and glow.
+- **Backgrounds**: colors, gradients, still images, animated GIFs and videos. Videos and GIFs follow the song's playback state.
+- **Playlists**: queue several tracks, play next, repeat, and reorder by drag and drop.
+- **Presets and projects**: 14 built-in presets, custom presets, validated JSON import and export, randomize, and 100 steps of undo and redo.
+- **Output**: PNG screenshots, and WebM or MP4 video at 720p to 4K, 24/30/60 fps, with selectable audio bitrate.
+- **Layout**: a pinned preview, full-screen mode, and a responsive layout from desktop to mobile.
 
-Nebula Visualizer is a browser-based music visualizer built with the Web Audio API and Canvas. It started as a classic 63-bar spectrum inspired by early Monstercat visuals and has grown into a "visualizer studio": seven display modes, full control over colors, cover art, text and effects, ten built-in presets, undo/redo, project import/export, and screenshot and video capture.
+## Getting started
 
-**Highlights**
-
-- Seven visualizer modes, from the classic bars to a ridgeline plot, each with its own controls
-- A built-in demo track (a small link under the player, shown until the first song is loaded), so you can see it move before choosing a song
-- A visual preset gallery (the thumbnails are drawn from each preset's real settings: colours, layout, glow, stars), including LED Matrix and Mirrored Smooth Wave looks
-- Click the song time to switch between elapsed and remaining time (`-0:40.0 / 1:00.0`); the choice is remembered
-- Drag tracks by the ⋮⋮ handle to reorder the playlist (or focus the handle and use the arrow keys)
-- Audio-reactive motion with adjustable sensitivity, bass-driven cover and background pulses, and beat-triggered stars and particles
-- Colors: main color, gradient, rainbow, auto color cycling, background color/gradient/image
-- An adjustable frequency range with a draggable graph, plus advanced tone and response controls
-- A styleable cover (shape, size, position, border, shadow, opacity) and fully styleable text (font, weight, alignment, shadow)
-- Glow effects, a star field and particle bursts, with direction control
-- Playlists: choose several songs, queue more or play one next, and move through them with Previous and Next
-- Presets, JSON projects, randomize, reset, and 100-step undo/redo
-- PNG screenshots and WebM/MP4 video export up to 4K
-- Full-screen mode, a hideable play bar, and a responsive layout for desktop and mobile. The preview stays pinned while you scroll through the settings
-
-## Quick start
-
-1. Open the live demo, or open `index.html` locally in a browser. No build step or server is needed.
-2. Click **Choose song** and pick an audio file (see [limits](#browser-support-and-limits)). Artist, title and embedded cover art are filled in automatically when the file has [ID3 tags](#song-tags-id3).
-3. No song at hand? Click **Play the built-in demo** under the player to hear a built-in tune. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
-4. Press play (<kbd>Space</kbd>) and choose a mode in the **Visualizer** panel.
-5. Tweak colors, cover, text, glow and stars to match the track.
-6. Save a preset, export a project, or capture a screenshot or video.
+1. Open the [live demo](https://nintobias.github.io/nebulaviz/), or open `index.html` in a modern browser. No build step or server is required.
+2. Choose one or more songs, or drop them on the page. Title, artist, album, year, track, genre and embedded cover art are read from ID3 tags when present.
+3. Without a file, use **Play the built-in demo** under the player. The demo is synthesized in the browser.
+4. Pick a visualizer mode and a preset as a starting point, then adjust.
 
 ## Visualizer modes
 
-| Mode | Description | Mode-specific controls |
+| Mode | Description | Mode-specific settings |
 | --- | --- | --- |
-| **63-Bar Spectrum** | Classic FFT bars, the original Nebula look | Bar shape, corner size, spacing |
-| **Circular Spectrum** | Bars radiating around a ring, bass at the top | Symmetry, radius, bar length, width, count |
-| **Mirrored Spectrum** | Symmetrical bars around a center line | Bar count (16–160), bar shape, spacing |
-| **Smooth Wave** | One continuous flowing curve with a soft fill | Line width, fill, line glow, detail |
-| **Mirrored Smooth Wave** | The same curve above and below a center line | Line width, fill, line glow, detail |
-| **LED Matrix** | Columns of round lights | Column count (16–100), falling peak dots (gravity) |
-| **Ridgeline** | Recent spectrum history stacked back to front | Rows, row spacing, peak height, line width; only the front line glows |
+| 63-Bar Spectrum | Classic bars, one per band | Bar shape, corner size, spacing |
+| Circular Spectrum | Bars radiating from a ring; bass at the top | Symmetry, radius, bar length, width, count |
+| Mirrored Spectrum | Bars mirrored around a center line | Bar count (16–160), bar shape, spacing |
+| Smooth Wave | One continuous curve with an optional fill | Line width, fill, line glow, detail |
+| Mirrored Smooth Wave | The same curve above and below a center line | Line width, fill, line glow, detail |
+| LED Matrix | Columns of round lights | Column count (16–100), falling peak dots |
+| Ridgeline | Recent spectrum history stacked back to front | Rows, row spacing, peak height, line width |
 
-Bar shapes are **Rectangle**, **Rounded**, **Capsule** and **Beveled**. Corner size applies to Rounded and Beveled.
+Bar shapes are rectangle, rounded, capsule and beveled. Corner size applies to rounded and beveled bars.
 
-## Settings reference
+## Frequency analysis
 
-Settings are grouped in collapsible panels; the technical ones (such as Frequency range) start closed. Every slider also has a numeric box where you can type an exact value, and hovering a slider explains what the number means.
+The **Frequency range** panel sets which part of the spectrum the bars show. A graph on a logarithmic axis (20 Hz to 20 kHz) displays the band positions and lights them with the music. Drag its two handles, or use the sliders, to set the lowest and highest frequency. The defaults are 20.9 Hz to 13.7 kHz.
 
-<details>
-<summary><strong>Sound & Reactivity</strong></summary>
+- **Band spacing** moves from logarithmic (0%) to linear (100%). A linear scale gives the treble many more bars.
+- **Tone balance** adds a treble boost that starts at a chosen frequency, caps its maximum, and cuts the low end.
+- **Response** controls smoothing between neighbouring bars, the rise and fall speed, the noise floor, and contrast.
 
-| Control | What it does |
-| --- | --- |
-| Sensitivity | Bar height gain, 40–160%. 100% matches the original reference look. |
-| Pulse cover artwork to bass | Makes the cover grow on bass hits; **Cover pulse** sets the amount (up to 40%). |
-| Pulse background to bass | Adds a wash of the main color on bass; **BG pulse** sets the strength. |
+The bass pulse follows the lowest bars up to about 98 Hz, so it keeps working when the range changes. Beat detection always listens to 30–150 Hz.
 
-</details>
+## Appearance
 
-<details>
-<summary><strong>Frequency range</strong></summary>
+- **Colors.** Main and gradient colors each have a hue wheel, a saturation and value square, and hex and RGB fields. Auto cycling rotates the hue. Rainbow spreads the spectrum across the bars or around the ring. **Lock overlay color** keeps the interface on the color you last chose while cycling.
+- **Background.** Solid, two-color gradient (with a draggable angle dial; hold <kbd>Shift</kbd> for 15° steps or <kbd>Alt</kbd> to disable snapping), or a still image, GIF or video. Videos play muted and loop, and they are included in exports.
+- **Cover.** Square, rounded, circle or squircle; crop or letterbox fit; size, offset and opacity; border; drop shadow. Text can follow the cover's position and size. In circular mode the cover sits inside the ring, and the text stays centered beneath it.
+- **Text.** Ten fonts, four weights, alignment, letter spacing, a shadow and an optional glow. Three lines are supported: artist, title and extra information.
+- **Glow.** One blur radius with separate strengths for bars, cover and text. The glow follows the main color or the rainbow hue.
+- **Stars and particles.** Density, speed, bass boost and color for the star field; beat sensitivity, amount and size for the bursts. One dial sets the direction of both.
+- **Contrast protection.** If your colors are too close to the background, an outline in the opposite tone is added. Your chosen colors are never changed.
 
-Chooses which part of the sound spectrum the 63 bars show. A graph on a logarithmic frequency axis (20 Hz to 20 kHz) displays the bar positions, lights them up with the music, and has two handles you can drag. The sliders below it stay in sync with the handles.
+## Playback and playlists
 
-| Control | What it does |
-| --- | --- |
-| Lowest / Highest | First and last frequency shown (20–500 Hz and 1–20 kHz). The default is 20.9 Hz to 13.7 kHz. |
-| Band spacing | 0% = logarithmic (default), 100% = linear, which gives the treble many more bars. |
-| Reset range | Restores every frequency setting, including the advanced ones. |
-
-**Advanced options** (collapsed by default):
-
-| Group | Controls |
-| --- | --- |
-| Tone balance | Treble boost (dB per octave), the frequency it starts from, its maximum, and the low-end cut |
-| Response | Smoothing between neighbouring bars, rise speed, fall speed, noise floor, contrast |
-
-> [!NOTE]
-> The bass pulse (cover, background and star boost) follows the lowest bars up to about 98 Hz, at least three, so it still works when you move the range. Beat detection always listens to 30–150 Hz.
-
-</details>
-
-<details>
-<summary><strong>Colors</strong></summary>
-
-- **Main color** and optional **Gradient** end color, each with a hue wheel, saturation/value square, hex and RGB fields.
-- **Auto color cycling** slowly rotates the hue (1–90°/s).
-- **Rainbow** paints the whole spectrum across the bars, or around the ring in circular mode. Optionally moving, with direction and speed (10–360°/s).
-- **Overlay colors** tints the play bar, sliders and checkboxes with your colors. **Lock overlay color** keeps the interface on the color you last picked, so cycling and rainbow don't keep recoloring it.
-
-</details>
-
-<details>
-<summary><strong>Background</strong></summary>
-
-- A solid color, a two-color gradient with a draggable angle dial, or a background image.
-- Dial: drag to set the angle. <kbd>Shift</kbd> snaps to 15° steps, <kbd>Alt</kbd> disables snapping.
-- An image covers the color and gradient settings, which are dimmed while one is loaded.
-
-</details>
-
-<details>
-<summary><strong>Glow</strong></summary>
-
-A shared **Blur radius** plus separate strengths for **Bars**, **Cover art** and **Text**. The glow uses your main color (or the live rainbow hue). 0% turns a glow off. In the Ridgeline only the front line glows, because a glow on every row would be too heavy to draw.
-
-</details>
-
-<details open>
-<summary><strong>Cover</strong></summary>
-
-| Control | What it does |
-| --- | --- |
-| Show cover | When off, the text slides left into the free space instead of leaving a gap. |
-| Shape | Square, rounded square, circle or squircle. |
-| Corner radius | For the rounded square only, as a percentage of the cover size. |
-| Size | 50–150%. 100% is the original 192 px. |
-| Offset X / Y | Moves the cover, in pixels of the 1920×1080 frame. |
-| Opacity | 0–100%. Useful over busy background images. |
-| Fit | **Crop to fill** (default) or **Fit**, which shows the whole image with black letterbox bars. |
-| Attach text to cover | On by default. The text follows the cover's size and position; off keeps the text where it is. |
-| Border | Width, color, or **Match visualizer color** (gradient or rainbow). Drawn inside the cover's edge. |
-| Shadow | Opacity, blur, offset X/Y and color. Opacity 0% means no shadow. |
-| Placeholder | With no image, the placeholder follows the chosen shape. The ♪ can be hidden or recolored. |
-
-> [!TIP]
-> In circular mode the cover sits inside the ring. Size and Offset are relative to that spot, and the text stays centered under the ring, so **Attach text to cover** has no effect there.
-
-</details>
-
-<details>
-<summary><strong>Text</strong></summary>
-
-- **Font:** Montserrat (original), Oswald, Bebas Neue, Playfair Display, Orbitron, Pacifico, Arial, Georgia, Courier New or Impact. Web fonts are fetched from Google Fonts when first selected.
-- **Weight:** Default (bold artist over regular title), Regular, Bold or Heavy.
-- **Align:** Auto (left of the cover, or centered under the ring), Left, Center or Right.
-- **Size** 50–150%, **letter spacing**, **Offset X/Y**, **text color**, or **Match visualizer colors**.
-- **Shadow:** opacity, blur, offset X/Y and color.
-- Three lines are supported: artist, title and optional extra info. Long lines shrink to fit.
-
-</details>
-
-<details>
-<summary><strong>Stars & Particles</strong></summary>
-
-| Group | Controls |
-| --- | --- |
-| Stars | Density (20–1200), speed, bass boost, light up on beat with intensity, color (white, main, gradient or rainbow) |
-| Particle bursts | Beat sensitivity, amount per beat (5–300), size, speed |
-| Direction | One dial sets the direction stars fly and particles drift |
-
-Stars and particles freeze while a loaded song is paused, so a recording resumes exactly where it left off.
-
-</details>
-
-<details>
-<summary><strong>Contrast protection</strong></summary>
-
-When your colors are too close to the background, an outline in the opposite tone is added around bars, the cover placeholder and text, and a two-tone outline is used over mixed backgrounds. Your chosen colors are never changed.
-
-</details>
+- Selecting several files creates a playlist. Choose **Add to queue** to append, or **Play next** to insert after the current track.
+- **Previous** restarts the song after three seconds, or goes back on the first track. The <kbd>P</kbd> and <kbd>N</kbd> keys do the same as the buttons.
+- **Play the next track automatically** and **Repeat the queue** are on the Playlist panel. Skipping while paused selects the track without starting it.
+- Drag a track by its ⋮⋮ handle to reorder the queue, or focus the handle and use the arrow keys.
+- Only the playing track is decoded and held in memory, so long playlists use no more memory than a single song.
+- Stars, particles, videos and GIFs stop while a loaded song is paused, so a recording resumes exactly where it stopped.
+- Click the time display to switch between elapsed and remaining time. The choice is remembered.
 
 ## Presets, projects and history
 
-- **Preset gallery:** every preset, built-in or your own, is a small card drawn from its colors and mode. Click one to apply it.
-- **Built-in presets (10):** Default Nebula, Cyberpunk Neon, Sunset Vibes, Minimal Mono, Cinematic, Neon Ring, Chillwave, Synthwave, Clean Minimal and Dark Club.
-- **Custom presets:** **Save Current as Preset** stores the current look. Built-in names are protected, and replacing an existing preset asks first.
-- **Export / Import JSON:** saves and loads every setting, including text, cover and frequency range. Audio and images are not included. Imports are validated: invalid fields are skipped with a message, and numbers are clamped to each control's real range.
-- **Randomize:** applies a random color and layout look. **Randomize look when a new song loads** does it automatically.
-- **Reset to defaults:** asks for confirmation and keeps your song, images and text content.
-- **Undo / Redo:** up to 100 steps covering settings, images and custom presets. Dragging a slider counts as one step, and auto color cycling never adds steps.
+- **Preset gallery.** Each preset is drawn from its real colors, mode, glow and stars.
+- **Built-in presets (14)** cover classic, neon, cinematic, minimal and club looks, plus LED and mirrored-wave variants.
+- **Custom presets.** Save the current look under a name. Presets never change the text, cover or frequency range.
+- **JSON projects.** Export and import all settings. Audio and images are not included. Imports are validated: unknown or invalid fields are skipped and values are clamped to each control's range.
+- **Randomize** applies a random look. It can run automatically when a new song loads.
+- **Reset to defaults** asks for confirmation and keeps your song, images and text.
+- **Undo and redo** cover settings, images and custom presets, up to 100 steps. A slider drag is one step.
 
-> [!NOTE]
-> Presets leave the text, cover and frequency range alone, so switching looks never changes your layout. Reset to defaults does restore them.
+## Export
 
-### Song tags (ID3)
+- **Screenshot:** the camera button saves the current frame as a PNG.
+- **Video:** the record button captures the canvas and the song's audio.
 
-When you load an MP3 (or any file with ID3v1 or ID3v2.2 / 2.3 / 2.4 tags), Nebula reads the tags locally in your browser:
-
-- **Title** and **Artist** fill the text fields. Without a title tag the file name is used, as before.
-- **Album, year, track number and genre** appear in the info line under the song controls.
-- **Embedded cover art** (the front cover when there are several) becomes the cover.
-- Your own choices win: a cover you picked yourself is never replaced, and an artist you typed over is kept. Tag-filled values are replaced when you load the next song.
-- Filling the fields is one undo step. Other formats (FLAC, Ogg, M4A) play fine but their tags are not read yet.
-
-## Playlists
-
-Choose several songs at once with **Choose song** (or drop them on the page) and they become the playlist, played in order. The **Playlist** panel shows the queue; click a track to play it, or <kbd>✕</kbd> to remove it.
-
-- **Previous / Next** buttons beside the play button, or the <kbd>P</kbd> and <kbd>N</kbd> keys. Previous restarts the song if it has played for more than 3 seconds or is on the first track.
-- **Add to queue** appends songs to the end. **Play next** inserts them right after the playing track.
-- **Play the next track automatically** (on by default) starts the following track when one ends. **Repeat the queue** wraps back to the first track after the last one.
-- Skipping while paused selects the track without playing it.
-- Only the playing track is decoded and held in memory, so a long playlist uses no more memory than a single song. Each track has the same length limit as a single song.
-- Each new track updates the artist, title and cover from its ID3 tags, as for a single song. A cover or artist you typed yourself is kept.
-- Video recording ends when a track ends or changes; start a new recording for the next track.
-- The queue is not part of undo/redo, and it is not saved in project files (JSON projects hold settings only).
-- The demo track is not part of the playlist.
-
-## Output: screenshots and video
-
-**Screenshot:** the camera button saves the current frame as a PNG.
-
-**Video export:** the record button on the player captures video and audio.
-
-| Option | Choices |
+| Setting | Options |
 | --- | --- |
-| Format | Whatever your browser can record: WebM (VP9, VP8, AV1 or default) and MP4 (H.264 or default) |
-| Resolution | 1280×720 (downscaled), 1920×1080 (native), 2560×1440 and 3840×2160 (upscaled) |
+| Format | WebM (VP9, VP8 or browser default), MP4 where supported |
+| Resolution | 1280 × 720 (downscaled), 1920 × 1080 (native), 2560 × 1440 and 3840 × 2160 (upscaled) |
 | Frame rate | 24, 30 or 60 fps |
 | Audio bitrate | 128, 192, 256 or 320 kbps |
 
-- The picture is always drawn at 1920×1080 and scaled, so higher resolutions are an upscale.
-- Recording runs in real time, so keep the tab visible: browsers throttle background tabs and the video can drop frames. A warning appears if that happens.
-- Pausing the song pauses the recording. It stops and saves when you click the button again or the song ends.
-- The export follows the volume slider and mute, and survives seeking.
-- Video and screenshots match the on-screen result.
+The picture is always rendered at 1920 × 1080 and scaled to the chosen size. Recording runs in real time, so keep the tab visible. A warning appears if the browser drops frames. Pausing the song pauses the recording.
 
-## Shortcuts and drag & drop
+## Keyboard and drag & drop
 
-| Key | Action |
+| Input | Action |
 | --- | --- |
 | <kbd>Space</kbd> | Play / pause |
+| <kbd>N</kbd> / <kbd>P</kbd> | Next / previous track |
 | <kbd>M</kbd> | Mute / unmute |
-| <kbd>N</kbd> / <kbd>P</kbd> | Next / previous track in the playlist |
-| <kbd>F</kbd> | Full screen (<kbd>Esc</kbd> exits the fallback full-screen mode) |
-| <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd> | Undo |
-| <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Y</kbd> or <kbd>Shift</kbd> + <kbd>Z</kbd> | Redo |
+| <kbd>F</kbd> | Full screen (<kbd>Esc</kbd> leaves the fallback mode) |
+| <kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd> | Undo |
+| <kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Y</kbd>, or <kbd>Shift</kbd> + <kbd>Z</kbd> | Redo |
 
-**Drag & drop** anywhere on the page: audio files load as the song, images become the cover (or the background if dropped on the Background panel), and `.json` files import as a project.
+Drop targets:
 
-## How it works
+- **Audio** becomes the song, or joins the playlist when dropped on the Playlist panel.
+- **Image** on the cover spot or the Cover panel sets the cover. A dashed outline shows where it will land.
+- **Image, GIF or video** on the Background panel sets the background. Videos can only be backgrounds.
+- **`.json`** imports a project.
+
+## Architecture
 
 ```mermaid
 flowchart LR
     A[Audio file] -->|decodeAudioData| B[AudioBuffer]
     B --> C[Playback source] --> D[Volume] --> E[Speakers / recorder]
     B --> F[Analysis source<br/>muted] --> G[AnalyserNode<br/>FFT 8192]
-    G --> H[63 bands<br/>20.9 Hz to 13.7 kHz by default]
-    H --> I[Smoothing, auto gain,<br/>attack / decay]
+    G --> H[63 bands<br/>log or linear, adjustable range]
+    H --> I[Tilt, smoothing,<br/>auto gain, attack / decay]
     I --> J[Canvas 1920×1080]
     G --> K[Beat detector<br/>30 to 150 Hz]
     K --> J
 ```
 
-- The spectrum is split into 63 bands (logarithmic by default, range adjustable), tilt-corrected, smoothed, and normalized by an automatic gain so quiet and loud songs both look good.
-- A beat is a jump in 30–150 Hz energy relative to its own recent average. It drives star flashes, particle bursts and the bass pulse.
-- Everything is drawn to a single 1920×1080 canvas, which is also what screenshots and recordings capture.
+- Band energies are tilt-corrected, smoothed and normalized by an automatic gain, so quiet and loud material both fill the display.
+- A beat is a rise in 30–150 Hz energy relative to its own recent average. It drives star flashes, particle bursts and the bass pulse.
+- Everything is drawn to one 1920 × 1080 canvas, which is what screenshots and recordings capture.
+- Animated GIFs are decoded in the page and stepped on the visualizer's clock, so they behave the same in every browser.
 
 ## Browser support and limits
 
-- **Audio:** decoded by your browser, so supported formats vary (MP3, WAV, OGG, FLAC, M4A, AAC and others typically work).
-- **Long files:** a song is decoded into memory in full (about 10 to 20 times the size of an MP3). Files estimated to need more than about 0.8 GB (less on small devices) are refused with a message instead of crashing the tab. In practice that means roughly an hour of stereo audio at most.
-- **Images:** up to 25 MB each. Large images are downscaled to the size that can actually be drawn.
-- **Video export:** needs `MediaRecorder` and canvas capture. Only formats your browser supports are listed.
-- **Older browsers:** rounded cover corners fall back to square without `roundRect`, and the settings layout falls back to a simpler grid without CSS subgrid.
+- **Audio** is decoded by the browser. MP3, WAV, OGG, FLAC, M4A and AAC normally work. Tags are read from MP3 and from any file with ID3v1 or ID3v2 tags. FLAC, Ogg and M4A tags are not read yet.
+- **Length.** Decoded audio is held in memory at roughly 10–20 times the file's size. Tracks that would exceed the browser's memory allowance are refused with a message instead of crashing the tab. In practice that is roughly an hour of stereo audio.
+- **Images** are limited to 25 MB. Large images are downscaled to the size that can be drawn.
+- **Video backgrounds** are limited to 1 GB. Playback depends on the codecs your browser supports; MP4 (H.264) and WebM are the safest choices.
+- **GIFs** are limited to 25 MB, and their decoded frames to 600 MB. Very large GIFs are refused.
+- **Recording** requires `MediaRecorder` and canvas capture. Only the formats your browser can record are offered.
+- **Older browsers** fall back gracefully: rounded cover corners become square without `roundRect`, and the settings layout uses a simpler grid without CSS subgrid.
 
-## Project structure
+Tested in headless Chromium. Firefox and Safari are not yet verified.
 
-| File | Purpose |
+## Development
+
+| Path | Purpose |
 | --- | --- |
-| `index.html` | Application UI and controls |
-| `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art). A plain script with no dependencies |
-| `demo.js` | Synthesizer for the built-in demo track. A plain script with no dependencies |
-| `style.css` | Layout, theming and visual styling |
-| `queue.js` | Playlist order logic (next, previous, insert, remove). A plain script with no dependencies |
-| `script.js` | Audio analysis, rendering, presets, export/import, playlist and visualizer behavior |
-| `tests/` | Node tests for the ID3 reader, the demo synth, the playlist logic and the font tool. Run `npm test` (Node 20+; nothing to install) |
-| `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` for self-hosting (`npm run fonts`) |
-| `fonts/` | Created by the font tool; not in the repository until you run it |
+| `index.html` | Interface and controls |
+| `style.css` | Layout, theming and styling |
+| `script.js` | Audio analysis, rendering, presets, playlists, history, import and export |
+| `queue.js` | Playlist order logic: next, previous, insert, remove, move |
+| `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art) |
+| `demo.js` | Synthesizer for the built-in demo track |
+| `tests/` | Node tests for the ID3 reader, demo synthesizer, playlist logic and font tool |
+| `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` |
 
-**Built with:** vanilla JavaScript, the Web Audio API (`AnalyserNode` and audio buffers), and HTML Canvas 2D. No framework or build step.
+Run the tests with `npm test` (Node 20 or later; nothing to install).
 
-### Fonts and privacy
+**Design notes.** The parsing and playlist logic live in plain scripts with no dependencies, so they can be tested in Node. They are not ES modules, because modules cannot load from `file://`, and opening `index.html` locally is supported. The rendering, settings and history code depends on the browser's audio and canvas APIs, so it is kept together in `script.js` for now.
 
-The text options use a few Google fonts. Until you run the font tool, the page loads them from Google Fonts, which is the one request that leaves your browser. To self-host them:
+### Fonts
+
+Text can use ten font families. Until the fonts are self-hosted, the page loads the Google Fonts it needs, which is the only request that leaves the browser. To self-host them:
 
 ```
-npm run fonts      # or: node tools/get-fonts.mjs  (needs Node 18+ and internet, once)
+npm run fonts
 ```
 
-then commit the generated `fonts/` folder. The page loads `fonts/fonts.css` first and only falls back to Google when that file is missing.
+Then commit the generated `fonts/` folder. The page prefers `fonts/fonts.css` and falls back to Google Fonts only when that file is missing.
 
-### Why `script.js` is still one file
+## License and disclaimer
 
-The pure, testable parts live in their own plain scripts (`id3.js`, `demo.js`), loaded in order before `script.js`. They are ordinary scripts rather than ES modules on purpose: modules cannot be loaded from `file://`, and "open `index.html` locally" is a feature. The rendering, settings and history code is tightly interwoven and needs a browser to test, so it stays together for now.
-
-## Notes
-
-This is a fan-made tribute project and is not affiliated with Monstercat.
+Nebula Visualizer is an independent project inspired by the spectrum aesthetic of Monstercat's early visuals. It is not affiliated with or endorsed by Monstercat.
