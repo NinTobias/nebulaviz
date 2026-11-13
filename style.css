@@ -1189,7 +1189,7 @@ input[type=color]:disabled {
   }
 }
 
-/* ---- Preset gallery, Essentials / All toggle ---- */
+/* ---- Preset gallery ---- */
 .preset-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
@@ -1241,23 +1241,6 @@ input[type=color]:disabled {
   color: #fff
 }
 
-.view-toggle {
-  display: flex;
-  gap: 6px
-}
-
-.view-toggle .btn {
-  flex: 1
-}
-
-.view-toggle .btn.on {
-  border-color: #f2d90a;
-  color: #fff
-}
-
-body.essentials details[data-adv] {
-  display: none
-}
 /* --- playback skip buttons and playlist --- */
 .vbtn:disabled {
   opacity: .4;
@@ -1332,4 +1315,101 @@ body.essentials details[data-adv] {
 .queue-rm:focus-visible {
   outline: 2px solid var(--overlay-accent);
   outline-offset: -2px
+}
+/* --- demo link (empty state only), clickable time, queue reordering --- */
+.link-btn {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer
+}
+
+.link-btn[hidden] {
+  display: none
+}
+
+.link-btn:hover {
+  color: var(--ink)
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--overlay-accent);
+  outline-offset: 2px
+}
+
+#time {
+  cursor: pointer;
+  user-select: none
+}
+
+#time:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px
+}
+
+#time:focus-visible {
+  outline: 2px solid var(--overlay-accent);
+  outline-offset: 2px
+}
+
+.queue-grip {
+  flex: none;
+  padding: 0 4px 0 10px;
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: -2px;
+  cursor: grab;
+  touch-action: none
+}
+
+.queue-grip:hover {
+  color: var(--ink)
+}
+
+.queue-grip:focus-visible {
+  outline: 2px solid var(--overlay-accent);
+  outline-offset: -2px
+}
+
+.queue-list.sorting,
+.queue-list.sorting * {
+  cursor: grabbing;
+  user-select: none
+}
+
+.queue-row.dragging {
+  opacity: .45
+}
+
+.queue-row {
+  position: relative
+}
+
+.queue-row.drop-above::before,
+.queue-row.drop-below::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--overlay-accent);
+  z-index: 1
+}
+
+.queue-row.drop-above::before {
+  top: -1px
+}
+
+.queue-row.drop-below::after {
+  bottom: -1px
 }

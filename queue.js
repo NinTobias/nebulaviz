@@ -29,4 +29,12 @@ function queueIndexAfterRemove(idx, removed) {
   return idx;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { queueNextIndex, queuePrevIndex, queueInsertIndex, queueIndexAfterRemove };   // lets the Node tests load this file; in the browser it is a plain script
+// The playing index after the track at `from` has been dragged to position `to` (its final index in the reordered queue).
+function queueIndexAfterMove(idx, from, to) {
+  if (idx === from) return to;
+  if (from < idx && to >= idx) return idx - 1;
+  if (from > idx && to <= idx) return idx + 1;
+  return idx;
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { queueNextIndex, queuePrevIndex, queueInsertIndex, queueIndexAfterRemove, queueIndexAfterMove };   // lets the Node tests load this file; in the browser it is a plain script

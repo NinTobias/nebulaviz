@@ -39,8 +39,10 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 **Highlights**
 
 - Seven visualizer modes, from the classic bars to a ridgeline plot, each with its own controls
-- A built-in demo track (**Try demo**), so you can see it move before choosing a song
-- A visual preset gallery, and an **Essentials / All settings** switch that keeps the panel list short for newcomers
+- A built-in demo track (a small link under the player, shown until the first song is loaded), so you can see it move before choosing a song
+- A visual preset gallery (the thumbnails are drawn from each preset's real settings: colours, layout, glow, stars), including LED Matrix and Mirrored Smooth Wave looks
+- Click the song time to switch between elapsed and remaining time (`-0:40.0 / 1:00.0`); the choice is remembered
+- Drag tracks by the ⋮⋮ handle to reorder the playlist (or focus the handle and use the arrow keys)
 - Audio-reactive motion with adjustable sensitivity, bass-driven cover and background pulses, and beat-triggered stars and particles
 - Colors: main color, gradient, rainbow, auto color cycling, background color/gradient/image
 - An adjustable frequency range with a draggable graph, plus advanced tone and response controls
@@ -55,7 +57,7 @@ Nebula Visualizer is a browser-based music visualizer built with the Web Audio A
 
 1. Open the live demo, or open `index.html` locally in a browser. No build step or server is needed.
 2. Click **Choose song** and pick an audio file (see [limits](#browser-support-and-limits)). Artist, title and embedded cover art are filled in automatically when the file has [ID3 tags](#song-tags-id3).
-3. No song at hand? Press **Try demo** to play a built-in tune. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
+3. No song at hand? Click **Play the built-in demo** under the player to hear a built-in tune. Optionally choose a different cover image and edit the **Artist**, **Song title** and **Extra info** fields.
 4. Press play (<kbd>Space</kbd>) and choose a mode in the **Visualizer** panel.
 5. Tweak colors, cover, text, glow and stars to match the track.
 6. Save a preset, export a project, or capture a screenshot or video.
@@ -76,7 +78,7 @@ Bar shapes are **Rectangle**, **Rounded**, **Capsule** and **Beveled**. Corner s
 
 ## Settings reference
 
-Settings are grouped in collapsible panels. **Essentials** (the default for first-time visitors) hides the technical panels, Frequency range and Stars & Particles; **All settings** shows everything, and your choice is remembered. Every slider also has a numeric box where you can type an exact value, and hovering a slider explains what the number means.
+Settings are grouped in collapsible panels; the technical ones (such as Frequency range) start closed. Every slider also has a numeric box where you can type an exact value, and hovering a slider explains what the number means.
 
 <details>
 <summary><strong>Sound & Reactivity</strong></summary>

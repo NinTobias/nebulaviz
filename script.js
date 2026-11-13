@@ -208,6 +208,7 @@ const fmtMB = b => Math.round(b / 1048576).toLocaleString('en') + ' MB';
 function installSong(decoded, { gen, title, label, size, tags = {} }) {
   stopRecording();   // only once the new song is really replacing the old one
   buf = decoded;
+  $('demoBtn').hidden = true;   // the demo link is only an empty-state hint
   $('title').value = tags.title || title;
   if (tags.artist) { $('artist').value = tags.artist; autoArtist = tags.artist; }
   else if (autoArtist !== null) { if ($('artist').value === autoArtist) $('artist').value = DEFAULTS.artist; autoArtist = null; }   // drop the previous song's artist, unless the user edited it
@@ -321,6 +322,47 @@ function removeFromQueue(i) {
   renderQueue();
 }
 function clearQueue() { queue = []; queueIdx = -1; renderQueue(); }
+// Reorder: the track at `from` ends up at index `to`. The playing track keeps playing and the queue keeps pointing at it.
+function moveInQueue(from, to) {
+  if (from === to || from < 0 || to < 0 || from >= queue.length || to >= queue.length) return;
+  const [t] = queue.splice(from, 1); queue.splice(to, 0, t);
+  queueIdx = queueIndexAfterMove(queueIdx, from, to);
+  renderQueue();
+}
+// Drag a row by its grip (pointer events, so it works with mouse, pen and touch). The line shows where the track will land.
+function startQueueDrag(e, from, li) {
+  if (e.button) return;   // left button / touch / pen only
+  e.preventDefault();
+  const list = $('queueList'), rows = Array.from(list.children), grip = e.currentTarget;
+  try { grip.setPointerCapture(e.pointerId); } catch (_) { }
+  li.classList.add('dragging'); list.classList.add('sorting');
+  let slot = from, lastY = e.clientY, done = false;   // slot = gap the track would drop into: 0 (before the first row) .. rows.length (after the last)
+  const update = () => {
+    const r = list.getBoundingClientRect();
+    if (lastY < r.top + 28) list.scrollTop -= 8; else if (lastY > r.bottom - 28) list.scrollTop += 8;   // edge auto-scroll for long queues
+    slot = rows.length;
+    for (let k = 0; k < rows.length; k++) { const b = rows[k].getBoundingClientRect(); if (lastY < b.top + b.height / 2) { slot = k; break; } }
+    rows.forEach((row, k) => {
+      row.classList.toggle('drop-above', k === slot);
+      row.classList.toggle('drop-below', slot === rows.length && k === rows.length - 1);
+    });
+  };
+  const finish = apply => {
+    if (done) return; done = true;
+    clearInterval(timer);
+    grip.removeEventListener('pointermove', onMove); grip.removeEventListener('pointerup', onUp); grip.removeEventListener('pointercancel', onCancel);
+    document.removeEventListener('keydown', onKey, true);
+    rows.forEach(row => row.classList.remove('dragging', 'drop-above', 'drop-below')); list.classList.remove('sorting');
+    if (apply) moveInQueue(from, slot > from ? slot - 1 : slot);
+  };
+  const onMove = ev => { lastY = ev.clientY; update(); };
+  const onUp = () => finish(true), onCancel = () => finish(false);
+  const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); } };
+  const timer = setInterval(update, 40);   // keeps scrolling while the pointer rests near an edge
+  grip.addEventListener('pointermove', onMove); grip.addEventListener('pointerup', onUp); grip.addEventListener('pointercancel', onCancel);
+  document.addEventListener('keydown', onKey, true);
+  update();
+}
 
 function syncQueueUI() {
   $('prevBtn').disabled = !buf;
@@ -333,6 +375,19 @@ function renderQueue() {
   queue.forEach((t, i) => {
     const li = document.createElement('li');
     li.className = 'queue-row' + (i === queueIdx ? ' now' : '');
+    const grip = document.createElement('button');
+    grip.type = 'button'; grip.className = 'queue-grip'; grip.textContent = '⋮⋮';
+    grip.title = 'Drag to reorder, or press the up / down arrow keys';
+    grip.setAttribute('aria-label', `Move ${t.name}. Drag it, or press the up or down arrow key.`);
+    grip.onpointerdown = e => startQueueDrag(e, i, li);
+    grip.onkeydown = e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const to = i + (e.key === 'ArrowUp' ? -1 : 1);
+      if (to < 0 || to >= queue.length) return;
+      moveInQueue(i, to);
+      const g = list.children[to] && list.children[to].querySelector('.queue-grip'); if (g) g.focus();   // the list was rebuilt: keep the keyboard on the moved track
+    };
     const play = document.createElement('button');
     play.type = 'button'; play.className = 'queue-name'; play.textContent = `${i + 1}. ${t.name}`; play.title = 'Play this track';
     play.onclick = () => skipTo(i);
@@ -340,7 +395,7 @@ function renderQueue() {
     rm.type = 'button'; rm.className = 'queue-rm'; rm.textContent = '✕'; rm.title = 'Remove from the queue';
     rm.setAttribute('aria-label', `Remove ${t.name} from the queue`);
     rm.onclick = () => removeFromQueue(i);
-    li.append(play, rm);
+    li.append(grip, play, rm);
     list.append(li);
   });
   $('queueHint').hidden = queue.length > 0;
@@ -423,9 +478,30 @@ function ui() {
   if (!buf) return;
   const t = dragging ? $('seek').value / 1000 * buf.duration : cur();
   if (!dragging) $('seek').value = t / buf.duration * 1000;
-  $('time').textContent = fmt(t) + ' / ' + fmt(buf.duration);
+  $('time').textContent = timeText(t);
   updateSliders();
 }
+// Click the time to switch between elapsed (0:20.0 / 1:00.0) and remaining (-0:40.0 / 1:00.0). The choice is remembered.
+const TIME_KEY = 'nebulaTimeMode';
+let showRemaining = false; try { showRemaining = localStorage.getItem(TIME_KEY) === 'remaining'; } catch (e) { }
+function timeText(t) {
+  if (!buf) return (showRemaining ? '-' : '') + '0:00.0 / 0:00.0';
+  // work in whole tenths, so elapsed + remaining always add up to the total shown (and float error cannot drop a tenth)
+  const tq = Math.floor(t * 10 + 1e-6) / 10;
+  return (showRemaining ? '-' + fmt(buf.duration - tq + 1e-6) : fmt(tq)) + ' / ' + fmt(buf.duration);
+}
+function toggleTimeMode() {
+  showRemaining = !showRemaining;
+  try { localStorage.setItem(TIME_KEY, showRemaining ? 'remaining' : 'elapsed'); } catch (e) { }
+  $('time').textContent = timeText(buf ? cur() : 0);
+}
+$('time').onclick = toggleTimeMode;
+$('time').onkeydown = e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault(); e.stopPropagation();   // Space must not also start / pause the song
+  toggleTimeMode();
+};
+$('time').textContent = timeText(0);
 $('seek').oninput = () => { dragging = true; updateSliders(); };
 $('seek').onchange = () => {
   dragging = false;
@@ -1592,7 +1668,11 @@ const PRESET_INFO = {   // [display name, short description]
   chillwave: ['Chillwave', 'Soft cyan and pink on purple, gentle waveform.'],
   synthwave: ['Synthwave', 'Hot pink and cyan bars on deep purple, stars flying down.'],
   minimal: ['Clean Minimal', 'Plain white bars, no stars, no particles, no pulsing.'],
-  darkclub: ['Dark Club', 'Red and violet ridgeline, heavy bass flashes and particles.']
+  darkclub: ['Dark Club', 'Red and violet ridgeline, heavy bass flashes and particles.'],
+  ledmatrix: ['LED Matrix', 'Green to amber lights on black, with falling peak dots.'],
+  ledamber: ['Amber Console', 'Orange to red LED columns on warm black, a vintage VU wall.'],
+  aurora: ['Aurora Wave', 'Mirrored smooth wave in green and violet, soft fill and glow.'],
+  emberwave: ['Ember Mirror', 'Mirrored smooth wave in amber and rose over dark red.']
 };
 const PRESETS = {
   default: { main: '#f2d90a', end: '#ff6a00', bg: '#000000', bgEnd: '#1a0b3d', useGrad: false, useBgGrad: true, mode: 'bars' },
@@ -1624,6 +1704,26 @@ const PRESETS = {
   darkclub: {
     main: '#ff0033', end: '#7a00ff', bg: '#000000', bgEnd: '#14001f', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'ridge', sens: 1.15, pulseAmt: 0.1, bgReactive: true, bgPulse: 0.25,
     stars: { on: true, count: 100, speed: 0.7, boost: 10, flash: true, light: 1.2, angle: 90 }, particles: { on: true, count: 90, size: 3, speed: 1.2, sens: 1 }
+  },
+  ledmatrix: {
+    main: '#19ff6b', end: '#ffd400', bg: '#020503', bgEnd: '#0a1a10', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'dots',
+    dots: { count: 48, peak: true }, glow: { blur: 16, bars: 0.55, cover: 0, text: 0 }, sens: 1.1, bassPulse: false, bgReactive: false,
+    stars: { on: false }, particles: { on: false }
+  },
+  ledamber: {
+    main: '#ffa200', end: '#ff2d00', bg: '#0b0502', bgEnd: '#1c0b03', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'dots',
+    dots: { count: 32, peak: true }, glow: { blur: 20, bars: 0.5, cover: 0.2, text: 0.15 }, sens: 1, bassPulse: true, pulseAmt: 0.05, bgReactive: false,
+    stars: { on: true, count: 80, speed: 0.4, boost: 3, flash: true, light: 0.5, angle: 90 }, particles: { on: false }
+  },
+  aurora: {
+    main: '#3dffb0', end: '#8a5cff', bg: '#04101c', bgEnd: '#0e0a2e', useGrad: true, useBgGrad: true, bgAngle: 180, mode: 'wavemir',
+    wave: { width: 5, fill: 0.35, glow: 1, detail: 170 }, glow: { blur: 26, bars: 0.45, cover: 0.25, text: 0.2 }, sens: 0.95, pulseAmt: 0.06, bgReactive: false,
+    stars: { on: true, count: 200, speed: 0.4, boost: 3, flash: true, light: 0.8, angle: 270 }, particles: { on: true, count: 20, size: 3, speed: 0.5, sens: 0.6 }
+  },
+  emberwave: {
+    main: '#ffb347', end: '#ff3c78', bg: '#12040a', bgEnd: '#2b0a14', useGrad: true, useBgGrad: true, bgAngle: 160, mode: 'wavemir',
+    wave: { width: 7, fill: 0.22, glow: 0.9, detail: 140 }, glow: { blur: 22, bars: 0.4, cover: 0.2, text: 0.25 }, sens: 1.05, bgReactive: true, bgPulse: 0.12,
+    stars: { on: true, count: 120, speed: 0.6, boost: 5, flash: true, light: 1, angle: 90 }, particles: { on: true, count: 35, size: 3, speed: 0.9, sens: 0.9 }
   }
 };
 { const sel = $('presetSelect'); sel.innerHTML = ''; Object.entries(PRESET_INFO).forEach(([k, v]) => sel.add(new Option(v[0], k))); }
@@ -1645,31 +1745,72 @@ function applyPreset(key) {
 }
 $('presetSelect').onchange = e => applyPreset(e.target.value);
 
-// Preset gallery: a small drawing of each look, built from the preset's own colours and mode (nothing is rendered live)
-const THUMB_H = [.35, .55, .8, .5, .9, .6, .4, .7, .95, .55, .45, .3];
+// Preset gallery: a small drawing of each look, built from the preset's own settings and the app's real layout constants
+// (nothing is rendered live). Coordinates are canvas pixels * TS, so the drawing lines up with what the canvas will show:
+// same horizontal colour gradient across the whole width (a ring therefore only shows the middle of it), cover and text below the visualizer, stars, glow.
+const TS = 100 / 1920;
+const thumbSpec = u => Math.min(1, 0.07 + 0.62 * Math.exp(-(((u - 0.28) / 0.1) ** 2)) + 0.45 * Math.exp(-(((u - 0.42) / 0.07) ** 2)) + 0.2 * Math.exp(-(((u - 0.62) / 0.1) ** 2)) + 0.05 * Math.sin(u * 61));   // a typical bass-heavy spectrum
+const THUMB_STARS = (() => { let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647; return Array.from({ length: 70 }, () => [r() * 100, r() * 56.25, 0.18 + r() * 0.22, 0.35 + r() * 0.5]); })();
 function presetThumb(key, uid) {
-  const p = { ...DEFAULTS, ...PRESETS[key] }, a = p.main, b = p.useGrad ? p.end : p.main;
+  const p = { ...DEFAULTS, ...PRESETS[key] }, a = p.main, b = p.useGrad ? p.end : p.main, m = p.mode, f = v => v.toFixed(2);
   const bg = p.useBgGrad ? `linear-gradient(${p.bgAngle}deg, ${p.bg}, ${p.bgEnd})` : p.bg;
-  const defs = `<defs><linearGradient id="pg${uid}" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>`;
-  const F = `url(#pg${uid})`; let body = '';
-  const m = p.mode;
-  if (m === 'circular') {
-    for (let i = 0; i < 32; i++) { const t = i / 32 * 6.2832, h = 3 + THUMB_H[i % 12] * 9; body += `<line x1="${(50 + Math.cos(t) * 11).toFixed(1)}" y1="${(26 + Math.sin(t) * 11).toFixed(1)}" x2="${(50 + Math.cos(t) * (11 + h)).toFixed(1)}" y2="${(26 + Math.sin(t) * (11 + h)).toFixed(1)}" stroke="${F}" stroke-width="1.6" stroke-linecap="round"/>`; }
-    body = body.replace(/stroke="url\([^)]+\)"/g, `stroke="${a}"`);   // a userSpaceOnUse-free gradient breaks on vertical lines, so rings use the main colour
-  } else if (m === 'mirrored') {
-    THUMB_H.forEach((h, i) => { body += `<rect x="${7 + i * 7.5}" y="${28 - h * 17}" width="5" height="${h * 34}" rx="2.5" fill="${F}"/>`; });
-  } else if (m === 'wave') {
-    body = `<path d="M4 46 C16 22 24 52 36 34 S58 14 68 30 S88 46 96 24 L96 52 L4 52Z" fill="${F}" opacity=".3"/><path d="M4 46 C16 22 24 52 36 34 S58 14 68 30 S88 46 96 24" fill="none" stroke="${F}" stroke-width="2.6" stroke-linecap="round"/>`;
-  } else if (m === 'wavemir') {
-    body = `<path d="M4 28 C16 14 24 38 36 22 S58 10 68 22 S88 32 96 16 L96 40 C88 52 70 38 58 36 S24 52 4 28Z" fill="${F}" opacity=".3"/><path d="M4 28 C16 14 24 38 36 22 S58 10 68 22 S88 32 96 16" fill="none" stroke="${F}" stroke-width="2.2" stroke-linecap="round"/><path d="M4 28 C24 52 36 36 58 36 S88 52 96 40" fill="none" stroke="${F}" stroke-width="2.2" stroke-linecap="round"/>`;
+  const gx0 = X0 * TS, gx1 = X1 * TS, base = BASE * TS, mid = MID * TS, maxh = MAXH * TS, minh = MINH * TS;
+  let stops = `<stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/>`;
+  if (p.rainbow && p.rainbow.on) stops = Array.from({ length: 13 }, (_, k) => `<stop offset="${f(k / 12)}" stop-color="hsl(${k * 30} 100% 55%)"/>`).join('');
+  const glowOn = m === 'wave' || m === 'wavemir' ? p.wave.glow > 0 : m !== 'ridge' && p.glow.bars > 0;
+  const gs = f(Math.max(0.5, Math.min(2.4, p.glow.blur * TS * 1.1)));
+  const defs = `<defs><linearGradient id="pg${uid}" gradientUnits="userSpaceOnUse" x1="${f(gx0)}" x2="${f(gx1)}" y1="0" y2="0">${stops}</linearGradient>` +
+    `<linearGradient id="pc${uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>` +
+    `<filter id="pf${uid}" x="-20%" y="-30%" width="140%" height="160%"><feGaussianBlur stdDeviation="${gs}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+  const F = `url(#pg${uid})`; let viz = '';
+  const circ = m === 'circular';
+  if (m === 'bars' || m === 'mirrored') {
+    const n = m === 'bars' ? 26 : 30, pitch = (gx1 - gx0) / n, w = pitch * (m === 'bars' ? 0.74 : 0.62), cap = m === 'mirrored' || p.bars.shape === 'capsule';
+    const rx = cap ? w / 2 : p.bars.shape === 'rounded' ? Math.min(w / 2, 0.5) : 0;
+    for (let i = 0; i < n; i++) {
+      const h = minh + thumbSpec(i / (n - 1)) * (maxh - minh) * 0.9, x = gx0 + i * pitch;
+      viz += m === 'bars' ? `<rect x="${f(x)}" y="${f(base - h)}" width="${f(w)}" height="${f(h)}" rx="${f(rx)}" fill="${F}"/>` : `<rect x="${f(x)}" y="${f(mid - h / 2)}" width="${f(w)}" height="${f(h)}" rx="${f(rx)}" fill="${F}"/>`;
+    }
+  } else if (m === 'wave' || m === 'wavemir') {
+    const K = 48, sw = f(Math.max(0.8, p.wave.width * TS * 2.2)), top = [], bot = [];
+    for (let j = 0; j <= K; j++) { const h = minh + thumbSpec(j / K) * (maxh - minh) * 0.9, x = gx0 + (gx1 - gx0) * j / K; if (m === 'wave') top.push([x, base - h]); else { top.push([x, mid - h / 2]); bot.push([x, mid + h / 2]); } }
+    const line = pts => 'M' + pts.map(q => f(q[0]) + ' ' + f(q[1])).join(' L');
+    if (m === 'wave') viz = `<path d="${line(top)} L${f(gx1)} ${f(base)} L${f(gx0)} ${f(base)}Z" fill="${F}" opacity="${p.wave.fill}"/><path d="${line(top)}" fill="none" stroke="${F}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    else viz = `<path d="${line(top)} L${line(bot.slice().reverse()).slice(1)}Z" fill="${F}" opacity="${p.wave.fill}"/><path d="${line(top)}" fill="none" stroke="${F}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/><path d="${line(bot)}" fill="none" stroke="${F}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
   } else if (m === 'dots') {
-    for (let i = 0; i < 12; i++) for (let r = 0; r < 6; r++) body += `<circle cx="${9 + i * 7.5}" cy="${48 - r * 6.5}" r="2.2" fill="${F}" opacity="${r < Math.round(THUMB_H[i] * 6) ? 1 : .13}"/>`;
+    const cols = 22, rows = 9, pitch = (gx1 - gx0 - 1) / (cols - 1), rp = maxh / rows, r = Math.min(pitch * 0.34, rp * 0.34);
+    for (let i = 0; i < cols; i++) {
+      const on = Math.round(thumbSpec(i / (cols - 1)) * rows * 0.9);
+      for (let k = 0; k < rows; k++) viz += `<circle cx="${f(gx0 + 0.5 + i * pitch)}" cy="${f(base - (k + 0.5) * rp)}" r="${f(r)}" fill="${F}" opacity="${k < on ? 1 : 0.1}"/>`;
+      if (p.dots.peak && on < rows) viz += `<circle cx="${f(gx0 + 0.5 + i * pitch)}" cy="${f(base - (Math.min(rows - 1, on + 1 + (i % 3)) + 0.5) * rp)}" r="${f(r)}" fill="${F}" opacity=".85"/>`;
+    }
   } else if (m === 'ridge') {
-    for (let r = 5; r >= 0; r--) { const y = 48 - r * 6; let d = `M4 ${y}`; THUMB_H.forEach((h, i) => { d += ` L${(4 + i * 8.7).toFixed(1)} ${(y - h * 10 * (1 - r * 0.1)).toFixed(1)}`; }); body += `<path d="${d} L96 ${y}" fill="${bg.startsWith('linear') ? p.bg : bg}" stroke="${F}" stroke-width="1.2" opacity="${(1 - r * 0.14).toFixed(2)}"/>`; }
-  } else {
-    THUMB_H.forEach((h, i) => { body += `<rect x="${7 + i * 7.5}" y="${50 - h * 34}" width="5" height="${h * 34}" fill="${F}"/>`; });
+    const rowsN = 7, step = p.ridge.step * TS * 1.5, bgc = p.bg;
+    for (let r = rowsN - 1; r >= 0; r--) {
+      const y = base - r * step; let d = `M${f(gx0)} ${f(y)}`;
+      for (let i = 0; i <= 30; i++) { const u = i / 30; d += ` L${f(gx0 + (gx1 - gx0) * u)} ${f(y - thumbSpec(u) * 8 * (1 - r * 0.08))}`; }
+      viz += `<path d="${d} L${f(gx1)} ${f(y)}Z" fill="${bgc}" stroke="${F}" stroke-width="0.45" opacity="${f(1 - r * 0.1)}"/>`;
+    }
+  } else if (circ) {
+    const R = p.circ.radius, len = Math.max(MINH + 2, Math.min(p.circ.length, CIRC_MAX - R)), n = 56;
+    for (let i = 0; i < n; i++) {
+      const fr = i / n, sym = p.circ.sym ? (fr < 0.5 ? fr * 2 : (1 - fr) * 2) : fr, l = MINH + thumbSpec(sym) * (len - MINH) * 0.9, t = -Math.PI / 2 + fr * 2 * Math.PI;
+      viz += `<line x1="${f((CIRC_CX + Math.cos(t) * R) * TS)}" y1="${f((CIRC_CY + Math.sin(t) * R) * TS)}" x2="${f((CIRC_CX + Math.cos(t) * (R + l)) * TS)}" y2="${f((CIRC_CY + Math.sin(t) * (R + l)) * TS)}" stroke="${F}" stroke-width="${f(Math.max(0.5, p.circ.width * TS * 1.5))}" stroke-linecap="round"/>`;
+    }
   }
-  return `<span class="thumb" style="background:${bg}"><svg viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">${defs}${body}</svg></span>`;
+  viz = `<g${glowOn ? ` filter="url(#pf${uid})"` : ''}>${viz}</g>`;
+  // stars: more stars = more dots
+  let stars = '';
+  if (p.stars.on) {
+    const n = Math.max(6, Math.min(THUMB_STARS.length, Math.round(p.stars.count / 6))), sc = p.starColor || p.stars.color || 'white', col = sc === 'main' ? a : sc === 'gradient' ? b : '#fff';
+    stars = THUMB_STARS.slice(0, n).map(s => `<circle cx="${f(s[0])}" cy="${f(s[1])}" r="${f(s[2])}" fill="${col}" opacity="${f(s[3])}"/>`).join('');
+  }
+  // cover art + title text, where the canvas puts them (ring: cover inside the ring, text centred below; others: cover and text under the bars)
+  const cs = 10.2, cx = circ ? 50 - cs / 2 : gx0, cy = circ ? CIRC_CY * TS - cs / 2 : 31;
+  const tx = circ ? 50 : cx + cs + 2.6, ty = circ ? 47.4 : 34.2, an = circ ? 'middle' : 'start', lx = circ ? tx - 7 : tx;
+  const cover = `<rect x="${f(cx)}" y="${f(cy)}" width="${cs}" height="${cs}" fill="url(#pc${uid})"/><text x="${f(cx + cs / 2)}" y="${f(cy + cs * 0.72)}" font-size="6.5" text-anchor="middle" fill="#fff" font-family="sans-serif">♪</text>`;
+  const text = `<rect x="${f(lx)}" y="${f(ty)}" width="14" height="2.1" rx=".4" fill="#fff" opacity=".95"/><rect x="${f(circ ? tx - 5 : tx)}" y="${f(ty + 3)}" width="10" height="1.3" rx=".3" fill="#fff" opacity=".8"/>`;
+  return `<span class="thumb" style="background:${bg}"><svg viewBox="0 0 100 56.25" preserveAspectRatio="none" aria-hidden="true">${defs}${stars}${viz}${cover}${text}</svg></span>`;
 }
 function renderPresetGallery() {
   const box = $('presetGallery'); if (!box) return;
@@ -1687,20 +1828,6 @@ function renderPresetGallery() {
 }
 new MutationObserver(renderPresetGallery).observe($('presetSelect'), { childList: true });   // custom presets being saved or deleted
 renderPresetGallery();
-
-// Essentials / All settings: first-time visitors see fewer panels (the technical ones are tagged data-adv). The choice is remembered.
-{
-  const KEY = 'nebulaSettingsView';
-  let all = false; try { all = localStorage.getItem(KEY) === 'all'; } catch (e) { }
-  const show = v => {
-    all = v; document.body.classList.toggle('essentials', !v);
-    $('viewEssentials').classList.toggle('on', !v); $('viewAll').classList.toggle('on', v);
-    $('viewEssentials').setAttribute('aria-pressed', String(!v)); $('viewAll').setAttribute('aria-pressed', String(v));
-    try { localStorage.setItem(KEY, v ? 'all' : 'essentials'); } catch (e) { }
-  };
-  $('viewEssentials').onclick = () => show(false); $('viewAll').onclick = () => show(true);
-  show(all);
-}
 
 // custom presets = everything in PRESETS that is not built in; they are part of every undo step
 const isBuiltIn = k => Object.prototype.hasOwnProperty.call(PRESET_INFO, k);

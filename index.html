@@ -36,7 +36,10 @@
 							<path d="M16 6h2v12h-2zM6 6v12l10.5-6z" />
 						</svg>
 					</button>
-					<span id="time">0:00.0 / 0:00.0</span>
+					<span id="time" role="button" tabindex="0"
+						title="Click to switch between elapsed and remaining time"
+						aria-label="Song time. Click to switch between elapsed and remaining time">0:00.0 /
+						0:00.0</span>
 					<input type="range" id="seek" min="0" max="1000" step="1" value="0" disabled
 						aria-label="Song position">
 					<div class="volume">
@@ -69,9 +72,6 @@
 			<div class="choose-bar">
 				<label class="btn" title="Choose one or more songs. They become the playlist, played in order">Choose
 					song<input type="file" id="song" accept="audio/*" multiple></label>
-				<button class="btn" id="demoBtn" type="button"
-					title="Plays a short built-in tune, so you can try the visualizer without a song">▶ Try
-					demo</button>
 				<label class="btn">Choose cover<input type="file" id="cover" accept="image/*"></label>
 				<button class="btn" id="removeCoverImage" type="button">Remove cover</button>
 				<button class="btn" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
@@ -79,15 +79,13 @@
 					Redo</button>
 			</div>
 			<div id="songInfo" class="info" hidden></div>
-			<div id="status">Choose a song to begin, or press Try demo. The visualizer studio is ready.</div>
+			<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
+			<button class="link-btn" id="demoBtn" type="button"
+				title="Plays a short built-in tune, so you can try the visualizer without a song">No song handy? ▶ Play
+				the
+				built-in demo</button>
 		</div>
 		<div class="groups">
-			<div class="view-toggle" role="group" aria-label="How many settings to show">
-				<button class="btn on" id="viewEssentials" type="button" aria-pressed="true"
-					title="Hide the technical panels (frequency range, stars and particles)">Essentials</button>
-				<button class="btn" id="viewAll" type="button" aria-pressed="false" title="Show every panel">All
-					settings</button>
-			</div>
 			<details class="group" open>
 				<summary>Presets & Project</summary>
 				<div class="group-body">
@@ -132,7 +130,8 @@
 					<div class="queue-count" id="queueCount"></div>
 					<ol class="queue-list" id="queueList" aria-label="Queue"></ol>
 					<div class="hint" id="queueHint">Choose several songs (or drop them on the page) to play them in
-						order. Use Add to queue to append, Play next to insert after the playing track. Previous and
+						order. Use Add to queue to append, Play next to insert after the playing track. Drag a track by
+						its ⋮⋮ handle (or focus it and press the arrow keys) to change the order. Previous and
 						Next move through the list; keys P and N do the same. Songs are decoded one at a time, so a long
 						playlist uses no more memory than a single song.</div>
 				</div>
@@ -228,7 +227,7 @@
 					</div>
 				</div>
 			</details>
-			<details class="group" id="bandsGroup" data-adv>
+			<details class="group" id="bandsGroup">
 				<summary>Frequency range</summary>
 				<div class="group-body">
 					<canvas id="bandGraph" class="band-graph" width="800" height="200"
@@ -583,7 +582,7 @@
 						group, and both can be used together.</div>
 				</div>
 			</details>
-			<details class="group" data-adv>
+			<details class="group">
 				<summary>Stars & Particles</summary>
 				<div class="group-body">
 					<div class="settings-row">
