@@ -56,6 +56,7 @@ let volume = 1, muted = false, outGain = null;
 let mediaRecorder = null, recDest = null, recChunks = [], recNote = '', expCanvas = null, expCtx = null;
 let autoColorCycle = false, colorCycleHue = 52;
 let bassPulse = true, pulseAmt = 0.08, bgAudioReactive = false, bgPulseAmt = 0.15, beatNow = false;
+const vizCfg = { x: 0, y: 0 };   // position of the whole visualizer, in pixels of the 1920x1080 frame
 let outlineViz = true, outlineCover = true, outlineText = true;   // contrast outlines (see the contrast safety code in the renderer); on by default
 
 // Lock overlay color: uiMain/uiEnd hold the colors the user last SET (picker, hex, preset). Auto color cycling doesn't touch them.
@@ -764,6 +765,7 @@ $('circCount').oninput = e => { circCount = +e.target.value; updateSliders(); };
 $('mirCount').oninput = e => { mirCount = +e.target.value; updateSliders(); };
 $('dotsCount').oninput = e => { dotsCount = +e.target.value; updateSliders(); };
 $('dotsPeak').onchange = e => { dotsPeak = e.target.checked; };
+Object.entries({ vizX: 'x', vizY: 'y' }).forEach(([id, k]) => { $(id).oninput = e => { vizCfg[k] = +e.target.value; }; });
 $('outlineViz').onchange = e => { outlineViz = e.target.checked; };
 $('outlineCover').onchange = e => { outlineCover = e.target.checked; };
 $('outlineText').onchange = e => { outlineText = e.target.checked; };
@@ -920,6 +922,8 @@ const SLIDER_INFO = {
   bandFloor:   { scale: 100, unit: '%', tip: 'Noise floor: levels below this are cut to zero, so quiet background noise does not show.' },
   bandGamma:   { unit: '×',      tip: 'Contrast. Above 1 makes quiet bars smaller and loud ones stand out; below 1 lifts the quiet parts.' },
   coverSize:   { unit: '%',      tip: 'Size of the cover. 100% is the original (192 px, or a bit under the ring radius in circular mode).' },
+  vizX:        { unit: 'px',     tip: 'Moves the whole visualizer left (negative) or right (positive), in pixels of the 1920x1080 frame. The cover and text stay where they are.' },
+  vizY:        { unit: 'px',     tip: 'Moves the whole visualizer up (negative) or down (positive), in pixels of the 1920x1080 frame. The range is not symmetric: at +545 every mode reaches the bottom edge, and at -200 the bars reach the top edge.' },
   coverX:      { unit: 'px',     tip: 'Moves the cover left (negative) or right (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
   coverY:      { unit: 'px',     tip: 'Moves the cover up (negative) or down (positive), in pixels of the 1920x1080 frame. With "Attach text to cover" the text follows.' },
   coverRadius: { unit: '%',      tip: 'Corner radius of the rounded square, as a percentage of the cover size. 50% = a circle.' },
@@ -1336,7 +1340,8 @@ function frame() {
     for (let k = 0; k <= 24; k++) vizFill.addColorStop(k / 24, `hsl(${(rbOffset + k * 15) % 360} 100% 55%)`);
   }
 
-  // --- RENDER VISUALIZER MODES ---
+  // --- RENDER VISUALIZER MODES --- (moved as one block by the Position offsets; gradients and glow move with it)
+  g.save(); g.translate(vizCfg.x, vizCfg.y);
   if (vizMode === 'bars') {
     const gap = barGap, w = (X1 - X0 - gap * (N - 1)) / N, cap = barShape === 'capsule';
     const all = new Path2D(), outlined = [];
@@ -1481,6 +1486,8 @@ function frame() {
   }
 
   drawParticles(mdt);
+
+  g.restore();
 
   // Cover artwork: bottom-left normally, centred inside the ring in circular mode (styled in the Cover group)
   const circ = vizMode === 'circular', C = coverCfg;
@@ -1687,7 +1694,7 @@ function getSettings(withText) {
     wave: { width: waveWidth, fill: waveFill, glow: waveGlow, detail: waveDetail }, ridge: { rows: ridgeRows, step: ridgeStep, amp: ridgeAmp, line: ridgeLine },
     bars: { shape: barShape, round: barRound, gap: barGap }, glow: { blur: glowBlur, bars: glowBars, cover: glowCover, text: glowText },
     bassPulse, pulseAmt, bgReactive: bgAudioReactive, bgPulse: bgPulseAmt, lockOverlay, sens,
-    outlines: { viz: outlineViz, cover: outlineCover, text: outlineText },
+    outlines: { viz: outlineViz, cover: outlineCover, text: outlineText }, viz: { ...vizCfg },
     stars: { ...starCfg }, particles: { ...partCfg }, text: { ...textCfg }, cover: { ...coverCfg }, bands: { ...bandCfg }
   };
 }
@@ -1707,6 +1714,8 @@ function applySettings(p) {
   const wv = p.wave || {}, rd = p.ridge || {};
   setCtl('waveWidth', wv.width); setCtl('waveFill', wv.fill); setCtl('waveGlow', wv.glow); setCtl('waveDetail', wv.detail);
   setCtl('ridgeRows', rd.rows); setCtl('ridgeStep', rd.step); setCtl('ridgeAmp', rd.amp); setCtl('ridgeLine', rd.line);
+  const vz = p.viz || {};
+  setCtl('vizX', vz.x); setCtl('vizY', vz.y);
   const ou = p.outlines || {};
   setCtl('outlineViz', ou.viz); setCtl('outlineCover', ou.cover); setCtl('outlineText', ou.text);
   const bs = p.bars || {}, gl = p.glow || {};
@@ -1824,7 +1833,7 @@ Object.assign(PRESETS.chillwave, { bars: { shape: 'capsule' } });
 Object.assign(PRESETS.minimal, { bars: { shape: 'rounded', round: 3 } });
 function applyPreset(key) {
   const p = PRESETS[key]; if (!p) return;
-  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text; delete base.cover; delete base.bands;   // presets never touch the text, cover or frequency range
+  const base = { ...DEFAULTS }; delete base.artist; delete base.title; delete base.extra; delete base.text; delete base.cover; delete base.bands; delete base.viz;   // presets never touch the text, cover, frequency range or visualizer position
   const m = { ...base, ...p };
   NESTED.forEach(k => { m[k] = { ...(base[k] || {}), ...(p[k] || {}) }; });
   applySettings(m);
@@ -1968,7 +1977,7 @@ const projectSchema = () => ({
   wave: { width: rg('waveWidth'), fill: rg('waveFill'), glow: rg('waveGlow'), detail: rg('waveDetail') }, ridge: { rows: rg('ridgeRows'), step: rg('ridgeStep'), amp: rg('ridgeAmp'), line: rg('ridgeLine') },
   bars: { shape: sel('barShape'), round: rg('barRound'), gap: rg('barGap') }, glow: { blur: rg('glowBlur'), bars: rg('glowBars'), cover: rg('glowCover'), text: rg('glowText') },
   bassPulse: bool, pulseAmt: rg('pulseAmt'), bgReactive: bool, bgPulse: rg('bgPulseAmt'), lockOverlay: bool, sens: rg('sens'),
-  outlines: { viz: bool, cover: bool, text: bool },
+  outlines: { viz: bool, cover: bool, text: bool }, viz: { x: rg('vizX'), y: rg('vizY') },
   stars: { on: bool, flash: bool, count: rg('starDensity'), speed: rg('starSpeed'), boost: rg('starBoost'), light: rg('starLight'), angle: num(0, 360), color: sel('starColor') },
   particles: { on: bool, count: rg('partCount'), size: rg('partSize'), speed: rg('partSpeed'), sens: rg('partSens') },
   bands: { lo: rg('bandLo'), hi: rg('bandHi'), spacing: rg('bandSpacing'), tilt: rg('bandTilt'), pivot: rg('bandPivot'), cap: rg('bandCap'), lowCut: rg('bandLowCut'),
