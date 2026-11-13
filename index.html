@@ -343,16 +343,18 @@
 					</div>
 				</div>
 			</details>
-			<details class="group">
+			<details class="group" id="backgroundGroup">
 				<summary>Background</summary>
 				<div class="group-body">
 					<div class="choose-bar">
-						<label class="btn">Choose background image<input type="file" id="backgroundImage"
-								accept="image/*"></label>
-						<button class="btn" id="removeBackgroundImage" type="button">Remove image</button>
+						<label class="btn">Choose background image or video<input type="file" id="backgroundImage"
+								accept="image/*,video/*"></label>
+						<button class="btn" id="removeBackgroundImage" type="button">Remove background</button>
 					</div>
-					<div class="hint" id="bgImageHint" hidden>An image is loaded and covers the background color, so the
-						settings below have no effect until you remove it.</div>
+					<div class="hint" id="bgImageHint" hidden>An image or video covers the background color, so the
+						settings
+						below have no effect until you remove it. Videos play muted and loop. Videos and GIFs pause with
+						the song.</div>
 					<div id="bgColorOpts">
 						<div class="settings-row">
 							<label class="toggle"><input type="checkbox" id="bgGradient"> Gradient</label>
@@ -429,7 +431,7 @@
 					<div class="hint">The Ridgeline has no glow.</div>
 				</div>
 			</details>
-			<details class="group">
+			<details class="group" id="coverGroup">
 				<summary>Cover</summary>
 				<div class="group-body">
 					<div class="settings-row">
@@ -675,6 +677,8 @@
 			</div>
 		</form>
 	</dialog>
+
+	<div id="dropSpot" class="drop-spot" hidden></div>
 
 	<div id="toast" role="status" aria-live="polite"></div>
 

@@ -21,6 +21,7 @@ const cv = document.getElementById('c'), g = cv.getContext('2d');
 const $ = id => document.getElementById(id);
 let ctx, analyser, buf, src, startedAt = 0, offset = 0, playing = false, freq;
 let coverImg = null, backgroundImg = null, flash = 0;
+let coverSpot = null;   // where the cover is drawn on the 1920x1080 canvas (unpulsed), so a dropped image can land on it
 let beatAvg = 0, beatPeak = 1e-6, beatClock = 0, lastBeat = -9, beatK0 = 1, beatK1 = 2, beatStrength = 1, lastBurst = -9;   // beat detector state
 let visualColor = '#f2d90a', gradientColor = '#ff6a00', useGradient = false, backgroundColor = '#000000';
 let backgroundEndColor = '#1a0b3d', useBgGradient = false, bgAngle = 180;
@@ -74,7 +75,7 @@ let bgImgRefs = [];   // representative colors of the background image (dark ...
 function sampleBgImage(img) {
   if (!img) { bgImgRefs = []; return; }
   const W = 32, H = 18, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true });
-  const sc = Math.max(W / img.width, H / img.height), w = img.width * sc, h = img.height * sc;
+  const sc = Math.max(W / mediaW(img), H / mediaH(img)), w = mediaW(img) * sc, h = mediaH(img) * sc;
   x.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
   let d; try { d = x.getImageData(0, 0, W, H).data; } catch (e) { bgImgRefs = ['#000000', '#ffffff']; return; }
   const cells = []; for (let i = 0; i < d.length; i += 4) { const hx = '#' + [d[i], d[i + 1], d[i + 2]].map(v => v.toString(16).padStart(2, '0')).join(''); cells.push([lumHex(hx), hx]); }
@@ -234,7 +235,7 @@ function installSong(decoded, { gen, title, label, size, tags = {} }) {
 // The queue is a list of files, not decoded audio: only the playing track is held in memory, so a long playlist costs no extra RAM.
 let queue = [], queueIdx = -1;             // queueIdx = the playing track in the queue, -1 when the song is not from the queue
 let playlistLoop = false, playlistAuto = true;   // repeat the whole queue / go on to the next track by itself
-const isAudioFile = f => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name);
+const isAudioFile = f => !isVideoFile(f) && (f.type.startsWith('audio/') || AUDIO_EXT.test(f.name));   // a video (even a .webm) is never a song: it can only be a background
 const titleFromName = name => name.replace(/\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i, '');
 
 // Decode queue[i] into the song slot, optionally starting playback. Returns false (after telling the user why) when it could not be loaded.
@@ -430,8 +431,144 @@ $('demoBtn').onclick = async () => {
 };
 
 const IMG_MAX_BYTES = 25 * 1048576, IMG_MAX_PX = 4096;   // hard cap; the real target is smaller (see loadImage)
+const VIDEO_EXT = /\.(mp4|m4v|webm|mov|ogv)$/i, VIDEO_MAX_BYTES = 1024 * 1048576;
+const isVideoFile = f => f.type.startsWith('video/') || VIDEO_EXT.test(f.name);
+const isGif = f => f.type === 'image/gif' || /\.gif$/i.test(f.name);
+function mediaW(m) { return m.videoWidth || m.naturalWidth || m.width; }
+function mediaH(m) { return m.videoHeight || m.naturalHeight || m.height; }
+// Animated GIFs are drawn from the original file: re-encoding them into a canvas (as stills are) would freeze them.
+// The object URL is kept on purpose, because the browser keeps animating the GIF from it.
+// Playback follows the song, like the stars and particles: while a loaded song is paused, videos stop and GIFs stop on their current frame.
+// With no song loaded everything keeps moving, so the look can be previewed.
+const isLive = () => !buf || playing;
+function syncVideoPlayback() {
+  const v = backgroundImg;
+  if (!v || v.tagName !== 'VIDEO') return;
+  if (isLive() && v.paused) v.play().catch(() => { });
+  else if (!isLive() && !v.paused) v.pause();
+}
+// --- Animated GIFs are decoded here, not by the browser: browsers do not reliably keep an <img> GIF running when it is drawn into a canvas,
+// and the frames cannot be paused from outside. Every frame is composed onto the full picture (as the GIF spec describes), and the
+// visualizer's clock steps through them, so they pause with the song and animate in any browser.
+const GIF_MAX_DECODED = 600 * 1048576;   // all frames are kept in memory, so the decoded size is capped
+function gifBlocks(u, p) {   // concatenated data of the sub-blocks starting at p, and the position after the terminator
+  const parts = []; let total = 0;
+  while (p < u.length) { const len = u[p++]; if (!len) break; parts.push(u.subarray(p, p + len)); total += len; p += len; }
+  const data = new Uint8Array(total); let o = 0;
+  for (const q of parts) { data.set(q, o); o += q.length; }
+  return { data, next: p };
+}
+function gifLzw(minCode, data, n) {   // LZW decoding of one frame's palette indices
+  const out = new Uint8Array(n), clear = 1 << minCode, eoi = clear + 1;
+  const prefix = new Int16Array(4096), suffix = new Uint8Array(4096), stack = new Uint8Array(4096);
+  for (let i = 0; i < clear; i++) { prefix[i] = -1; suffix[i] = i; }
+  let size = minCode + 1, next = eoi + 1, prev = -1, o = 0, buf = 0, bits = 0, p = 0;
+  while (o < n) {
+    while (bits < size) { if (p >= data.length) return out; buf |= data[p++] << bits; bits += 8; }
+    const code = buf & ((1 << size) - 1); buf >>>= size; bits -= size;
+    if (code === clear) { size = minCode + 1; next = eoi + 1; prev = -1; continue; }
+    if (code === eoi) break;
+    const special = prev >= 0 && code >= next;   // the code that was just being defined: string(prev) + its own first character
+    let c = special ? prev : code, sp = 0;
+    while (c >= 0 && sp < 4096) { stack[sp++] = suffix[c]; c = prefix[c]; }
+    const first = stack[sp - 1];
+    for (let k = sp - 1; k >= 0 && o < n; k--) out[o++] = stack[k];
+    if (special && o < n) out[o++] = first;
+    if (prev >= 0 && next < 4096) { prefix[next] = prev; suffix[next] = first; next++; if (next === (1 << size) && size < 12) size++; }
+    prev = code;
+  }
+  return out;
+}
+function decodeGif(ab) {   // -> { isGif, width, height, frames: [{ c: canvas, ms }], total, t, cur }
+  const u = new Uint8Array(ab), rd16 = i => u[i] | u[i + 1] << 8;
+  if (u.length < 13 || u[0] !== 0x47 || u[1] !== 0x49 || u[2] !== 0x46) throw new Error('not a GIF');
+  const W = rd16(6), H = rd16(8), fl = u[10];
+  if (!W || !H) throw new Error('empty GIF');
+  let p = 13, gct = null;
+  if (fl & 0x80) { const n = 3 * (2 << (fl & 7)); gct = u.subarray(p, p + n); p += n; }
+  const full = new Uint8ClampedArray(W * H * 4), frames = [];
+  let gce = { disposal: 0, transp: -1, ms: 100 }, saved = null, prevDisposal = 0, prevRect = null, bytes = 0;
+  while (p < u.length) {
+    const b = u[p++];
+    if (b === 0x21) {   // extension
+      const label = u[p++], blk = gifBlocks(u, p);
+      if (label === 0xF9 && blk.data.length >= 4) {   // graphic control: disposal, transparency, delay
+        const d = blk.data[1] | blk.data[2] << 8;
+        gce = { disposal: (blk.data[0] >> 2) & 7, transp: blk.data[0] & 1 ? blk.data[3] : -1, ms: d <= 1 ? 100 : d * 10 };
+      }
+      p = blk.next;
+    } else if (b === 0x2C) {   // image
+      const x = rd16(p), y = rd16(p + 2), w = rd16(p + 4), h = rd16(p + 6), ifl = u[p + 8];
+      p += 9;
+      let ct = gct;
+      if (ifl & 0x80) { const n = 3 * (2 << (ifl & 7)); ct = u.subarray(p, p + n); p += n; }
+      const minCode = u[p++], blk = gifBlocks(u, p); p = blk.next;
+      // what the previous frame asked to happen to the picture before this one is drawn
+      if (prevDisposal === 2 && prevRect) {
+        for (let r = 0; r < prevRect.h; r++) for (let c = 0; c < prevRect.w; c++) {
+          const X = prevRect.x + c, Y = prevRect.y + r; if (X < W && Y < H) full.fill(0, (Y * W + X) * 4, (Y * W + X) * 4 + 4);
+        }
+      } else if (prevDisposal === 3 && saved) full.set(saved);
+      saved = gce.disposal === 3 ? full.slice() : null;
+      const idx = gifLzw(minCode, blk.data, w * h);
+      const interlaced = !!(ifl & 0x40);
+      let rows = null;   // interlaced: stored row k is picture row rows[k]
+      if (interlaced) { rows = []; for (const [st, step] of [[0, 8], [4, 8], [2, 4], [1, 2]]) for (let r = st; r < h; r += step) rows.push(r); }
+      for (let k = 0; k < h; k++) {
+        const Y = y + (rows ? rows[k] : k); if (Y >= H) continue;
+        for (let c = 0; c < w; c++) {
+          const X = x + c; if (X >= W) continue;
+          const v = idx[k * w + c]; if (v === gce.transp || !ct || v * 3 + 2 >= ct.length) continue;
+          const o = (Y * W + X) * 4;
+          full[o] = ct[v * 3]; full[o + 1] = ct[v * 3 + 1]; full[o + 2] = ct[v * 3 + 2]; full[o + 3] = 255;
+        }
+      }
+      bytes += W * H * 4;
+      if (bytes > GIF_MAX_DECODED) throw new Error('too large');
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      cv.getContext('2d').putImageData(new ImageData(full.slice(), W, H), 0, 0);
+      frames.push({ c: cv, ms: gce.ms });
+      prevDisposal = gce.disposal; prevRect = { x, y, w, h };
+      gce = { disposal: 0, transp: -1, ms: 100 };   // graphic control applies to one image only
+    } else break;   // trailer (0x3B) or damage
+  }
+  if (!frames.length) throw new Error('no frames');
+  const total = frames.reduce((n, f) => n + f.ms, 0);
+  return { isGif: true, width: W, height: H, frames, total, t: 0, cur: frames[0].c };
+}
+// Advances the animated GIFs in use. Their clock is the stars' clock: it stops while a loaded song is paused.
+function advanceGifs(mdt) {
+  for (const a of [backgroundImg, coverImg]) {
+    if (!a || !a.isGif) continue;
+    a.t += mdt * 1000;
+    let r = a.total > 0 ? a.t % a.total : 0, i = 0;
+    while (i < a.frames.length - 1 && r >= a.frames[i].ms) { r -= a.frames[i].ms; i++; }
+    a.cur = a.frames[i].c;
+  }
+}
+function loadGif(f, what, cb) {
+  if (f.size > IMG_MAX_BYTES) { notify(`That ${what} GIF is larger than 25 MB.`, true); return; }
+  f.arrayBuffer().then(ab => {
+    let anim;
+    try { anim = decodeGif(ab); }
+    catch (err) { notify(`Could not read that ${what} GIF${err.message === 'too large' ? ': its frames would need too much memory to animate.' : '. It may be corrupt.'}`, true); return; }
+    cb(anim);
+  }, () => notify(`Could not load that ${what} GIF.`, true));
+}
+
+// Videos are played by the browser (muted, looping) and drawn into the canvas every frame, so exports include them.
+function loadVideo(f, cb) {
+  if (f.size > VIDEO_MAX_BYTES) { notify(`That video is larger than 1 GB.`, true); return; }
+  const url = URL.createObjectURL(f), v = document.createElement('video');
+  const fail = () => notify(`Could not play "${f.name}" in this browser. MP4 (H.264) and WebM are the safest formats.`, true);
+  v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+  v.onloadeddata = () => { if (v.videoWidth) cb(v); else fail(); };
+  v.onerror = fail;
+  v.src = url;   // kept alive: undo can bring the video back
+}
 function loadImage(f, what, cb) {   // size limit, error messages, and downscaling of huge images
   if (!f.type.startsWith('image/')) { notify(`That file is not an image.`, true); return; }
+  if (isGif(f)) return loadGif(f, what, cb);
   if (f.size > IMG_MAX_BYTES) { notify(`That ${what} image is larger than 25 MB.`, true); return; }
   const url = URL.createObjectURL(f), im = new Image();
   im.onload = () => {
@@ -447,11 +584,29 @@ function loadImage(f, what, cb) {   // size limit, error messages, and downscali
   im.onerror = () => { URL.revokeObjectURL(url); notify(`Could not load that ${what} image. It may be corrupt or in an unsupported format.`, true); };
   im.src = url;
 }
-$('backgroundImage').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  loadImage(f, 'background', im => { backgroundImg = im; sampleBgImage(im); syncBgImageUI(); commitHistory(); });
-};
-$('removeBackgroundImage').onclick = () => { backgroundImg = null; sampleBgImage(null); $('backgroundImage').value = ''; syncBgImageUI(); commitHistory(); };
+// The background is an image, a GIF, a video element or null. A video plays only while it is the background,
+// and its colour checks are refreshed every few seconds because its picture keeps changing.
+let bgVideoTimer = 0;
+function setBackground(m) {
+  if (backgroundImg && backgroundImg !== m && backgroundImg.tagName === 'VIDEO') backgroundImg.pause();
+  clearInterval(bgVideoTimer);
+  backgroundImg = m;
+  if (m && m.tagName === 'VIDEO') {
+    m.play().catch(() => { });
+    const resample = () => { if (backgroundImg === m && m.readyState >= 2) sampleBgImage(m); };
+    resample(); bgVideoTimer = setInterval(resample, 3000);
+  } else if (m && m.isGif) {
+    const resample = () => { if (backgroundImg === m) sampleBgImage(m.cur); };
+    resample(); bgVideoTimer = setInterval(resample, 3000);
+  } else sampleBgImage(m);
+  syncBgImageUI();
+}
+function loadBackground(f) {
+  const done = m => { setBackground(m); commitHistory(); };
+  if (isVideoFile(f)) loadVideo(f, done); else loadImage(f, 'background', done);
+}
+$('backgroundImage').onchange = e => { const f = e.target.files[0]; if (f) loadBackground(f); };
+$('removeBackgroundImage').onclick = () => { setBackground(null); $('backgroundImage').value = ''; commitHistory(); };
 function syncBgImageUI() {   // an image covers the color/gradient, so those controls are dimmed (not disabled)
   $('bgColorOpts').classList.toggle('off', !!backgroundImg);
   $('bgImageHint').hidden = !backgroundImg;
@@ -1178,6 +1333,8 @@ function frame() {
   // Stars and particles stand still while a loaded song is paused or stopped (so a recording resumes exactly where it left off).
   // With no song loaded yet they keep drifting, so the star settings can still be previewed.
   const mdt = (playing || !buf) ? dt : 0;
+  syncVideoPlayback();
+  advanceGifs(mdt);
 
   if (autoColorCycle && playing) {
     const d = dt * cycleSpeed;
@@ -1189,10 +1346,11 @@ function frame() {
   if (rainbow && rbMove && playing) rbOffset = (((rbOffset - rbDir * rbSpeed * dt) % 360) + 360) % 360;
 
   // Background rendering
-  if (backgroundImg) {
-    const scale = Math.max(1920 / backgroundImg.width, 1080 / backgroundImg.height);
-    const w = backgroundImg.width * scale, h = backgroundImg.height * scale;
-    g.drawImage(backgroundImg, (1920 - w) / 2, (1080 - h) / 2, w, h);
+  const bgSrc = backgroundImg && backgroundImg.isGif ? backgroundImg.cur : backgroundImg;
+  const bgPic = bgSrc && (bgSrc.tagName !== 'VIDEO' || bgSrc.readyState >= 2) ? bgSrc : null;   // a video shows nothing until its first frame
+  if (bgPic) {
+    const bw = mediaW(bgPic), bh = mediaH(bgPic), scale = Math.max(1920 / bw, 1080 / bh), w = bw * scale, h = bh * scale;
+    g.drawImage(bgPic, (1920 - w) / 2, (1080 - h) / 2, w, h);
   } else if (useBgGradient) {
     const W = 1920, H = 1080;
     const rad = bgAngle * Math.PI / 180;
@@ -1403,6 +1561,7 @@ function frame() {
   const circ = vizMode === 'circular', C = coverCfg;
   const bs = (circ ? Math.round(circRadius * 0.95) : 192) * C.size / 100;   // base side before the bass pulse; circular: a bit under the ring radius, so the cover sits well inside the bars
   const ccx = circ ? CIRC_CX + C.x : X0 + bs / 2 + C.x, ccy = (circ ? CIRC_CY : 689) + C.y;   // default: left edge on the bars' left edge, vertically centred as in the original layout
+  coverSpot = C.on ? { x: ccx - bs / 2, y: ccy - bs / 2, s: bs } : null;
   const coverRight = ccx + bs / 2;   // unpulsed right edge: attached text hangs off this, so it doesn't jitter with the bass
   if (C.on) {
     const cs = bs * (bassPulse ? 1 + bass * pulseAmt : 1), cx = ccx - cs / 2, cy = ccy - cs / 2, S = Math.max(2, Math.ceil(cs));
@@ -1415,15 +1574,16 @@ function frame() {
     // 1) the cover itself, clipped to its shape, in its own buffer
     if (coverBuf.width !== S) { coverBuf.width = S; coverBuf.height = S; } else bx.clearRect(0, 0, S, S);
     bx.save(); bx.clip(coverShapePath(0, 0, cs));
-    if (coverImg) {
-      const iw = coverImg.width, ih = coverImg.height;
+    const cvSrc = coverImg && coverImg.isGif ? coverImg.cur : coverImg;
+    if (cvSrc) {
+      const iw = cvSrc.width, ih = cvSrc.height;
       if (C.fit === 'fit') {   // whole image, black bars where it doesn't fill the shape
         const k = Math.min(cs / iw, cs / ih), dw = iw * k, dh = ih * k;
         bx.fillStyle = '#000'; bx.fillRect(0, 0, cs, cs);
-        bx.drawImage(coverImg, (cs - dw) / 2, (cs - dh) / 2, dw, dh);
+        bx.drawImage(cvSrc, (cs - dw) / 2, (cs - dh) / 2, dw, dh);
       } else {
         const sq = Math.min(iw, ih);
-        bx.drawImage(coverImg, (iw - sq) / 2, (ih - sq) / 2, sq, sq, 0, 0, cs, cs);
+        bx.drawImage(cvSrc, (iw - sq) / 2, (ih - sq) / 2, sq, sq, 0, 0, cs, cs);
       }
     } else {
       bx.fillStyle = coverGrad(bx, 0, 0, cs); bx.fillRect(0, 0, cs, cs);
@@ -1981,7 +2141,7 @@ function jumpHistory(i) {
     const e = hist[i];
     applySettings(JSON.parse(e.s));
     restoreCustomPresets(JSON.parse(e.presets));
-    coverImg = e.cover; coverFromTag = false; backgroundImg = e.bg; sampleBgImage(backgroundImg); syncBgImageUI();
+    coverImg = e.cover; coverFromTag = false; setBackground(e.bg);
   } finally { restoring = false; }
   dirty = false; syncHistUI();
 }
@@ -2010,26 +2170,66 @@ syncHistUI();
 const AUDIO_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|wma|aiff?|webm|mp4)$/i;
 let dragDepth = 0;
 const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-document.addEventListener('dragenter', e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dragging'); } });
-document.addEventListener('dragleave', e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
-document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+// Audio always becomes the song / playlist. Images and videos land where they are dropped: the cover spot or the Cover panel
+// (images only), or the Background panel (images, GIFs and videos). A .json file imports a project.
+const coverSpotAt = (x, y) => {
+  const r = $('c').getBoundingClientRect();
+  if (!coverSpot || !r.width) return false;
+  const k = 1920 / r.width, px = (x - r.left) * k, py = (y - r.top) * k, pad = 16;   // a little slack around the cover
+  return px >= coverSpot.x - pad && px <= coverSpot.x + coverSpot.s + pad && py >= coverSpot.y - pad && py <= coverSpot.y + coverSpot.s + pad;
+};
+function dropZone(e) {
+  if (coverSpotAt(e.clientX, e.clientY)) return 'cover';
+  const grp = e.target.closest && e.target.closest('.group');
+  if (grp && grp.id === 'coverGroup') return 'cover';
+  if (grp && grp.id === 'backgroundGroup') return 'background';
+  if (grp && grp.id === 'playlistGroup') return 'playlist';
+  return null;
+}
+function placeDropSpot(zone) {   // dashed box over the cover, shown while files are dragged over the page
+  const el = $('dropSpot'), r = $('c').getBoundingClientRect();
+  if (!coverSpot || !r.width) { el.hidden = true; return; }
+  const k = r.width / 1920;
+  Object.assign(el.style, { left: r.left + coverSpot.x * k + 'px', top: r.top + coverSpot.y * k + 'px', width: coverSpot.s * k + 'px', height: coverSpot.s * k + 'px' });
+  el.hidden = false;
+  el.classList.toggle('over', zone === 'cover');
+}
+function clearDropHints() {
+  document.body.classList.remove('dragging', 'dz-cover', 'dz-background');
+  $('dropSpot').hidden = true;
+}
+document.addEventListener('dragenter', e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dragging'); placeDropSpot(null); } });
+document.addEventListener('dragleave', e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; clearDropHints(); } });
+document.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  const z = dropZone(e);
+  document.body.classList.toggle('dz-cover', z === 'cover');
+  document.body.classList.toggle('dz-background', z === 'background');
+  placeDropSpot(z);
+});
 document.addEventListener('drop', e => {
   if (!hasFiles(e)) return;
-  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
-  const grp = e.target.closest && e.target.closest('.group'), toBg = !!grp && grp.contains($('backgroundImage')), toPlaylist = !!grp && grp.id === 'playlistGroup';
-  const files = Array.from(e.dataTransfer.files);
+  e.preventDefault(); dragDepth = 0; clearDropHints();
+  const zone = dropZone(e), files = Array.from(e.dataTransfer.files);
   const audio = files.filter(isAudioFile);
-  if (audio.length) { if (toPlaylist) addToQueue(audio, 'end'); else setQueue(audio); }   // all dropped songs form the queue
-  let imageUsed = false, jsonUsed = false;
+  if (audio.length) { if (zone === 'playlist') addToQueue(audio, 'end'); else setQueue(audio); }   // all dropped songs form the queue
+  let visualUsed = false, jsonUsed = false, refused = '';
   for (const f of files) {
     if (isAudioFile(f)) continue;
-    const kind = f.type.startsWith('image/') ? (toBg ? 'backgroundImage' : 'cover') : /\.json$/i.test(f.name) ? 'importJsonFile' : null;
+    let kind = null;
+    if (/\.json$/i.test(f.name)) { if (!jsonUsed) kind = 'importJsonFile'; }
+    else if (f.type.startsWith('image/') || isVideoFile(f)) {
+      if (visualUsed) continue;   // first file of each kind wins
+      if (zone === 'background') kind = 'backgroundImage';
+      else if (zone === 'cover' && !isVideoFile(f)) kind = 'cover';
+      else { refused = isVideoFile(f) ? 'Videos can only be the background: drop them on the Background panel.' : 'Drop an image on the cover, or on the Background panel.'; continue; }
+    }
     if (!kind) continue;
-    if (kind === 'importJsonFile' ? jsonUsed : imageUsed) continue;   // first file of each kind wins
-    if (kind === 'importJsonFile') jsonUsed = true; else imageUsed = true;
+    if (kind === 'importJsonFile') jsonUsed = true; else visualUsed = true;
     const dt = new DataTransfer(); dt.items.add(f); $(kind).files = dt.files; $(kind).dispatchEvent(new Event('change'));
   }
-  if (!audio.length && !imageUsed && !jsonUsed) notify('Drop audio files, an image or a project .json file.', true);
+  if (!audio.length && !visualUsed && !jsonUsed) notify(refused || 'Drop audio files, a cover or background image or video, or a project .json file.', true);
 });
 
 // --- Keyboard Shortcuts & Fullscreen ---

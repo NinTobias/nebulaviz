@@ -1011,7 +1011,7 @@ dialog p {
 }
 
 body.dragging::after {
-  content: "Drop a song, a cover image or a project file";
+  content: "Drop a song, a cover or background image or video, or a project file";
   position: fixed;
   inset: 12px;
   display: grid;
@@ -1412,4 +1412,31 @@ input[type=color]:disabled {
 
 .queue-row.drop-below::after {
   bottom: -1px
+}
+
+/* --- drag and drop targets: the cover spot while files are dragged over the page, and the panels that accept them --- */
+.drop-spot {
+  position: fixed;
+  z-index: 10002;   /* above the dimmed page overlay (body.dragging::after, 10001) */
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px dashed var(--overlay-accent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .08);
+  transition: background .12s, box-shadow .12s
+}
+
+.drop-spot[hidden] {
+  display: none
+}
+
+.drop-spot.over {
+  background: rgba(255, 255, 255, .22);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .25)
+}
+
+body.dz-cover #coverGroup,
+body.dz-background #backgroundGroup {
+  outline: 2px dashed var(--overlay-accent);
+  outline-offset: 4px
 }
