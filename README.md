@@ -48,7 +48,9 @@ The optional media helper reads the title and artist that Spotify (desktop app),
 2. In the `helper` folder, run `python nebula_media_helper.py`. Use `--list` to see which apps publish media sessions, and `--app spotify` to choose one.
 3. In Nebula, turn on **Fill title and artist from the media helper**, then start live input.
 
-The helper listens only on `127.0.0.1` and answers only Nebula's own origins. Anything you type into the fields is kept. Limits: Windows only, and the text is whatever the app reports, so an app that publishes no title shows nothing.
+Each new track counts as a new song: the fields follow it, and with **Randomize look when a new song loads** on, the look changes too. Pausing or resuming the same track does not. Anything you type into the fields is kept until the next track.
+
+The helper listens only on `127.0.0.1` and answers only Nebula's own origins. Limits: Windows only, and the text is whatever the app reports, so an app that publishes no title shows nothing.
 
 ## Visualizer modes
 

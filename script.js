@@ -215,7 +215,7 @@ function setLiveUI(on) {
 // --- Track info from the Windows media helper (helper/nebula_media_helper.py): fills Title and Artist while live input is on.
 // Fields you type into during a live session are kept; everything else follows the playing track.
 const HELPER_URL = 'http://127.0.0.1:8777/now';
-let helperTimer = 0, helperKey = null, helperDown = false;
+let helperTimer = 0, helperTrack = null, helperDown = false;   // helperTrack: title + artist of the track last reported
 const helperTyped = { title: false, artist: false };   // set by typing (input events), not by the helper's own updates
 function setHelperStatus(text) { $('liveInfoStatus').textContent = text; }
 async function pollHelper() {
@@ -230,19 +230,20 @@ async function pollHelper() {
     if (!helperDown) { helperDown = true; setHelperStatus('Media helper not running (start nebula_media_helper.py).'); }
     return;
   }
-  const key = [info.title, info.artist, info.status].join('\u0000');
-  if (key === helperKey) return;   // nothing changed since the last read
-  helperKey = key;
   if (info.status === 'none' || !info.title) { setHelperStatus('No playing track reported.'); return; }
-  for (const [id, val] of [['title', info.title], ['artist', info.artist]]) {
-    if (!val) continue;
-    const el = $(id);
-    if (!helperTyped[id]) el.value = val;
+  // a new track is a new song: the fields follow it again and the randomize option applies, as it does for a loaded song.
+  // Pausing or resuming the same track is not a new song.
+  const track = info.title + '\u0001' + (info.artist || '');
+  if (track !== helperTrack) {
+    helperTrack = track;
+    helperTyped.title = helperTyped.artist = false;
+    $('title').value = info.title; $('artist').value = info.artist || '';
+    if ($('presetRandomize').checked) { randomizeSettings(); commitHistory(); }
   }
   setHelperStatus(`${info.title}${info.artist ? ' - ' + info.artist : ''} (${info.source || 'media'})`);
 }
 function startHelperPolling() {
-  helperKey = null; helperDown = false; helperTyped.title = helperTyped.artist = false;
+  helperTrack = null; helperDown = false; helperTyped.title = helperTyped.artist = false;
   clearInterval(helperTimer);
   if ($('liveInfo').checked) { helperTimer = setInterval(pollHelper, 1500); pollHelper(); }
 }
