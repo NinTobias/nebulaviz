@@ -81,6 +81,12 @@
 				<button class="btn" id="redoBtn" type="button" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>↷
 					Redo</button>
 			</div>
+			<div class="settings-row" id="liveInfoRow">
+				<label class="toggle"
+					title="Needs the Nebula media helper running on this PC (Windows). It reads the title and artist of the playing Spotify or browser tab, and fills the fields while live input is on. Your own edits are kept."><input
+						type="checkbox" id="liveInfo"> Fill title and artist from the media helper</label>
+				<span id="liveInfoStatus" class="info-note" aria-live="polite"></span>
+			</div>
 			<div id="songInfo" class="info" hidden></div>
 			<div id="status">Choose a song to begin. The visualizer studio is ready.</div>
 			<button class="link-btn" id="demoBtn" type="button"

@@ -212,6 +212,44 @@ function setLiveUI(on) {
   $('play').setAttribute('aria-label', on ? 'Stop live input' : playing ? 'Pause' : 'Play');
   syncQueueUI();
 }
+// --- Track info from the Windows media helper (helper/nebula_media_helper.py): fills Title and Artist while live input is on.
+// Fields you type into during a live session are kept; everything else follows the playing track.
+const HELPER_URL = 'http://127.0.0.1:8777/now';
+let helperTimer = 0, helperKey = null, helperDown = false;
+const helperTyped = { title: false, artist: false };   // set by typing (input events), not by the helper's own updates
+function setHelperStatus(text) { $('liveInfoStatus').textContent = text; }
+async function pollHelper() {
+  if (!liveMode || !$('liveInfo').checked) return;
+  let info;
+  try {
+    const r = await fetch(HELPER_URL, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    info = await r.json();
+    helperDown = false;
+  } catch (e) {
+    if (!helperDown) { helperDown = true; setHelperStatus('Media helper not running (start nebula_media_helper.py).'); }
+    return;
+  }
+  const key = [info.title, info.artist, info.status].join('\u0000');
+  if (key === helperKey) return;   // nothing changed since the last read
+  helperKey = key;
+  if (info.status === 'none' || !info.title) { setHelperStatus('No playing track reported.'); return; }
+  for (const [id, val] of [['title', info.title], ['artist', info.artist]]) {
+    if (!val) continue;
+    const el = $(id);
+    if (!helperTyped[id]) el.value = val;
+  }
+  setHelperStatus(`${info.title}${info.artist ? ' - ' + info.artist : ''} (${info.source || 'media'})`);
+}
+function startHelperPolling() {
+  helperKey = null; helperDown = false; helperTyped.title = helperTyped.artist = false;
+  clearInterval(helperTimer);
+  if ($('liveInfo').checked) { helperTimer = setInterval(pollHelper, 1500); pollHelper(); }
+}
+function stopHelperPolling() { clearInterval(helperTimer); helperTimer = 0; setHelperStatus(''); }
+$('liveInfo').onchange = () => { if (liveMode) startHelperPolling(); else setHelperStatus(''); };
+for (const id of ['title', 'artist']) $(id).addEventListener('input', () => { if (liveMode) helperTyped[id] = true; });
+
 async function startLive() {
   if (liveMode) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.isSecureContext) { notify('Live input needs a secure page (https or localhost) in a browser that can capture tab audio.', true); return; }
@@ -233,6 +271,7 @@ async function startLive() {
   liveMode = true; recSync();
   track.onended = () => stopLive('Sharing stopped. Live input is off.');   // the browser's own "Stop sharing" button
   setLiveUI(true);
+  startHelperPolling();
   notify('Live input is on. The shared audio drives the visualizer; it keeps playing in its own tab.');
 }
 function stopLive(msg) {
@@ -242,6 +281,7 @@ function stopLive(msg) {
   if (liveStream) liveStream.getTracks().forEach(t => t.stop());
   liveSrc = null; liveStream = null;
   sm.fill(0); parts.length = 0;
+  stopHelperPolling();
   setLiveUI(false); recSync();
   if (msg) notify(msg);
 }

@@ -1451,3 +1451,11 @@ body.dz-background #backgroundGroup {
 #liveBtn[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--overlay-accent)
 }
+
+/* short status line next to a toggle (media helper state) */
+.info-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dim)
+}

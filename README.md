@@ -40,6 +40,16 @@ Audio, images and video never leave your browser. The only external request is f
 - Recording captures the live audio, the same as a song.
 - Content the browser protects (DRM, for example) can arrive as silence. Streaming sites differ, so check the result in your own browser.
 
+### Track info from the media helper (Windows)
+
+The optional media helper reads the title and artist that Spotify (desktop app), Chrome and Edge publish to Windows, and makes them available to Nebula on the same PC. While live input is on, the helper fills the **Title** and **Artist** fields.
+
+1. Install Python 3.10 or later for Windows, then run `pip install winsdk`.
+2. In the `helper` folder, run `python nebula_media_helper.py`. Use `--list` to see which apps publish media sessions, and `--app spotify` to choose one.
+3. In Nebula, turn on **Fill title and artist from the media helper**, then start live input.
+
+The helper listens only on `127.0.0.1` and answers only Nebula's own origins. Anything you type into the fields is kept. Limits: Windows only, and the text is whatever the app reports, so an app that publishes no title shows nothing.
+
 ## Visualizer modes
 
 | Mode | Description | Mode-specific settings |
@@ -171,6 +181,7 @@ Tested in headless Chromium. Firefox and Safari are not yet verified.
 | `queue.js` | Playlist order logic: next, previous, insert, remove, move |
 | `id3.js` | ID3 tag reader (v1, v2.2, v2.3, v2.4, cover art) |
 | `demo.js` | Synthesizer for the built-in demo track |
+| `helper/nebula_media_helper.py` | Optional Windows helper that publishes the playing track's title and artist to Nebula |
 | `gif.js` | Animated GIF decoder (frames, disposal, transparency, interlacing) |
 | `tests/` | Node tests for the ID3 reader, the GIF decoder, the demo synthesizer, the playlist logic and the font tool |
 | `tools/get-fonts.mjs` | Downloads the web fonts into `fonts/` |
